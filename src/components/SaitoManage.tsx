@@ -23,6 +23,30 @@ function getCurrentApplyMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+function shiftMonth(value: string, delta: number): string {
+  const [y, m] = value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function MonthStepper({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="inline-flex items-center gap-1">
+      <button
+        onClick={() => onChange(shiftMonth(value, -1))}
+        className="px-2 py-1 border rounded hover:bg-gray-50 text-gray-600"
+        aria-label="前月"
+      >▲</button>
+      <span className="px-2 py-1 font-mono min-w-[80px] text-center text-sm">{value}</span>
+      <button
+        onClick={() => onChange(shiftMonth(value, 1))}
+        className="px-2 py-1 border rounded hover:bg-gray-50 text-gray-600"
+        aria-label="翌月"
+      >▼</button>
+    </div>
+  )
+}
+
 export default function SaitoManage() {
   const [expenses, setExpenses] = useState<ReceiptSaito[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -35,6 +59,18 @@ export default function SaitoManage() {
   const [applyFilter, setApplyFilter] = useState(getCurrentApplyMonth())
   const [pjFilter, setPjFilter] = useState('')
   const [editing, setEditing] = useState<ReceiptSaito | null>(null)
+  const [prediction, setPrediction] = useState<{
+    pj_no: string | null
+    pj_name: string | null
+    expense_item_code: string | null
+    source: 'schedule' | 'history' | 'both' | 'none'
+    confidence: number
+    candidates: {
+      schedule: { pj_no: string; client_name: string; subject: string }[]
+      history: { pj_no: string | null; expense_item_code: string | null; count: number }[]
+    }
+  } | null>(null)
+  const [predicting, setPredicting] = useState(false)
 
   // スケジュールモーダル
   const [showSchedule, setShowSchedule] = useState(false)
@@ -87,6 +123,39 @@ export default function SaitoManage() {
   }, [applyFilter, pjFilter])
 
   useEffect(() => { load() }, [load])
+
+  // 編集モーダル開いたら予測APIを呼ぶ
+  useEffect(() => {
+    if (!editing) { setPrediction(null); return }
+    const vendor = editing.vendor_name || ''
+    const usage = editing.usage_date || ''
+    if (!vendor && !usage) { setPrediction(null); return }
+    setPredicting(true)
+    const params = new URLSearchParams()
+    if (vendor) params.set('vendor_name', vendor)
+    if (usage) params.set('usage_date', usage)
+    fetch(`/api/expenses/predict?${params}`)
+      .then(r => r.json())
+      .then(data => setPrediction(data && data.source ? data : null))
+      .catch(() => setPrediction(null))
+      .finally(() => setPredicting(false))
+  }, [editing?.id, editing?.vendor_name, editing?.usage_date])
+
+  const applyPrediction = () => {
+    if (!editing || !prediction) return
+    const next = { ...editing }
+    if (prediction.pj_no) {
+      const p = projects.find(pp => pp.pj_no === prediction.pj_no)
+      next.pj_no = prediction.pj_no
+      next.pj_name = p?.case_name || prediction.pj_name || null
+    }
+    if (prediction.expense_item_code) {
+      const it = items.find(i => i.code === prediction.expense_item_code)
+      next.expense_item_code = prediction.expense_item_code
+      next.expense_item = it?.name || null
+    }
+    setEditing(next)
+  }
 
   // QRコード生成（submit URL）
   useEffect(() => {
@@ -265,7 +334,7 @@ export default function SaitoManage() {
       <section className="flex flex-wrap items-center gap-3 text-sm">
         <label className="flex items-center gap-2">
           <span className="text-gray-600">申請年月</span>
-          <input type="month" value={applyFilter} onChange={e => setApplyFilter(e.target.value)} className="px-2 py-1 border rounded" />
+          <MonthStepper value={applyFilter} onChange={setApplyFilter} />
         </label>
         <label className="flex items-center gap-2">
           <span className="text-gray-600">PJ</span>
@@ -333,6 +402,58 @@ export default function SaitoManage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-gray-800">経費を編集</h3>
+
+            {/* 予測パネル */}
+            {predicting && (
+              <div className="bg-blue-50 text-blue-700 text-xs px-3 py-2 rounded">予測中...</div>
+            )}
+            {prediction && prediction.source !== 'none' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-amber-800">
+                    🔮 予測（信頼度 {Math.round(prediction.confidence * 100)}% / {
+                      prediction.source === 'both' ? 'スケジュール＋履歴' :
+                      prediction.source === 'schedule' ? 'スケジュール' : '履歴'
+                    }）
+                  </span>
+                  <button onClick={applyPrediction}
+                    className="px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 text-[11px]">
+                    適用
+                  </button>
+                </div>
+                {prediction.pj_no && (
+                  <div className="text-gray-700">
+                    PJ: <span className="font-mono">{prediction.pj_no}</span>
+                    {(() => {
+                      const p = projects.find(pp => pp.pj_no === prediction.pj_no)
+                      return p ? <span className="text-gray-500"> {p.case_name}</span> : null
+                    })()}
+                  </div>
+                )}
+                {prediction.expense_item_code && (
+                  <div className="text-gray-700">
+                    経費項目: <span className="font-mono">{prediction.expense_item_code}</span>
+                    {(() => {
+                      const it = items.find(i => i.code === prediction.expense_item_code)
+                      return it ? <span className="text-gray-500"> {it.name}</span> : null
+                    })()}
+                  </div>
+                )}
+                {prediction.candidates.schedule.length > 1 && (
+                  <details className="text-gray-500">
+                    <summary className="cursor-pointer">同日他のスケジュール候補（{prediction.candidates.schedule.length}件）</summary>
+                    <ul className="pl-3 pt-1 space-y-0.5">
+                      {prediction.candidates.schedule.slice(0, 5).map(s => (
+                        <li key={s.pj_no}>
+                          <span className="font-mono">{s.pj_no}</span> {s.client_name} {s.subject && `／ ${s.subject}`}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 text-sm">
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">申請年月</span>
@@ -423,15 +544,7 @@ export default function SaitoManage() {
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1 text-sm text-gray-600">
-                  <span>月</span>
-                  <input
-                    type="month"
-                    value={scheduleFilter}
-                    onChange={e => setScheduleFilter(e.target.value)}
-                    className="px-2 py-1 border rounded text-sm"
-                  />
-                </label>
+                <MonthStepper value={scheduleFilter} onChange={setScheduleFilter} />
                 <button onClick={() => setShowSchedule(false)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
               </div>
             </div>
@@ -449,7 +562,7 @@ export default function SaitoManage() {
                 const filtered = (schedule.records || []).filter(r => {
                   if (!scheduleFilter) return true
                   const [fy, fm] = scheduleFilter.split('-')
-                  return r.年 === fy && r.月 === fm.replace(/^0/, '')
+                  return r.年 === fy && parseInt(r.月, 10) === parseInt(fm, 10)
                 })
                 return filtered.length === 0 ? (
                   <p className="text-gray-400 text-sm text-center py-12">該当するデータがありません</p>
