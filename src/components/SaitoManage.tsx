@@ -306,7 +306,7 @@ export default function SaitoManage() {
 
   const totalAmount = useMemo(() => expenses.reduce((s, e) => s + (e.total_amount ?? 0), 0), [expenses])
 
-  // 利用日の新しい順にソート（null/undefinedは最後）
+  // 利用日の古い順にソート（null/undefinedは最後）
   const expensesSorted = useMemo(() => {
     return [...expenses].sort((a, b) => {
       const ad = a.usage_date || ''
@@ -314,7 +314,7 @@ export default function SaitoManage() {
       if (!ad && !bd) return 0
       if (!ad) return 1
       if (!bd) return -1
-      return bd.localeCompare(ad)
+      return ad.localeCompare(bd)
     })
   }, [expenses])
 
