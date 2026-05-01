@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadJsonByName, getDataFolderId, saveJsonFile, renameFile } from '@/lib/drive';
+import { loadJsonByName, getDataFolderId, saveJsonFile, renameFile, deleteFile } from '@/lib/drive';
 import { requireAuth } from '@/lib/auth';
 import { buildSaitoFilename } from '@/lib/filename';
 import type { ReceiptSaito } from '@/types';
@@ -79,8 +79,18 @@ export async function DELETE(
 
     const folderId = getDataFolderId();
     const expenses = await loadExpenses(folderId);
+    const target = expenses.find(r => r.id === id);
     const next = expenses.filter(r => r.id !== id);
     await saveJsonFile('receipts.json', next, folderId);
+
+    // Drive上の元ファイルも削除（失敗しても全体は成功扱い）
+    if (target?.source_file_id) {
+      try {
+        await deleteFile(target.source_file_id);
+      } catch (e) {
+        console.error('Drive file delete failed (non-fatal):', e);
+      }
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('DELETE expenses/[id] error:', e);

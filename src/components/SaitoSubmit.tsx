@@ -25,6 +25,44 @@ function Row({ label, value }: { label: string; value: string | null | undefined
   )
 }
 
+// EXIF orientation を尊重した画像読み込み（モバイル縦撮影が横にならないように）
+async function loadImage(file: File): Promise<{ width: number; height: number; source: CanvasImageSource }> {
+  // モダンブラウザ: createImageBitmap で imageOrientation を尊重
+  if (typeof createImageBitmap !== 'undefined') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      return { width: bitmap.width, height: bitmap.height, source: bitmap }
+    } catch {
+      // フォールバック
+    }
+  }
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image()
+    i.onload = () => resolve(i)
+    i.onerror = reject
+    i.src = URL.createObjectURL(file)
+  })
+  return { width: img.naturalWidth, height: img.naturalHeight, source: img }
+}
+
+// EXIF 補正済の画像を Blob URL として返す（プレビュー/Cropper 用）
+async function makeOrientedPreviewUrl(file: File): Promise<string> {
+  if (typeof createImageBitmap === 'undefined') return URL.createObjectURL(file)
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const c = document.createElement('canvas')
+    c.width = bitmap.width
+    c.height = bitmap.height
+    c.getContext('2d')!.drawImage(bitmap, 0, 0)
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92)
+    })
+    return URL.createObjectURL(blob)
+  } catch {
+    return URL.createObjectURL(file)
+  }
+}
+
 // 画像をクロップ＋回転＋フィルタ適用してJPEG Fileを生成
 async function processImage(
   file: File,
@@ -33,20 +71,13 @@ async function processImage(
   brightness: number,
   contrast: number,
 ): Promise<File> {
-  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const i = new Image()
-    i.onload = () => resolve(i)
-    i.onerror = reject
-    i.src = URL.createObjectURL(file)
-  })
+  const img = await loadImage(file)
 
-  // クロップ領域（指定なしなら画像全体）
   const sx = cropArea?.x ?? 0
   const sy = cropArea?.y ?? 0
   const sw = cropArea?.width ?? img.width
   const sh = cropArea?.height ?? img.height
 
-  // 回転後の出力キャンバス
   const swap = rotation === 90 || rotation === 270
   const canvas = document.createElement('canvas')
   canvas.width = swap ? sh : sw
@@ -55,7 +86,7 @@ async function processImage(
   ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`
   ctx.translate(canvas.width / 2, canvas.height / 2)
   ctx.rotate((rotation * Math.PI) / 180)
-  ctx.drawImage(img, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh)
+  ctx.drawImage(img.source, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh)
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.9)
@@ -97,10 +128,8 @@ export default function SaitoSubmit() {
     setCroppedAreaPixels(areaPixels)
   }, [])
 
-  const handleFile = (f: File | null) => {
+  const handleFile = async (f: File | null) => {
     if (preview) URL.revokeObjectURL(preview)
-    setFile(f)
-    setPreview(f ? URL.createObjectURL(f) : null)
     setCrop({ x: 0, y: 0 })
     setZoom(1)
     setCroppedAreaPixels(null)
@@ -110,6 +139,23 @@ export default function SaitoSubmit() {
     setSuccess(false)
     setExtracted(null)
     setError('')
+    if (!f) { setFile(null); setPreview(null); return }
+    if (f.type.startsWith('image/')) {
+      // EXIF補正したblobで上書き（プレビューもsubmitもこれを使う）
+      try {
+        const orientedUrl = await makeOrientedPreviewUrl(f)
+        // orientedUrlからFile作成（同名・JPEG）
+        const blob = await fetch(orientedUrl).then(r => r.blob())
+        const orientedFile = new File([blob], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+        setFile(orientedFile)
+        setPreview(orientedUrl)
+        return
+      } catch (e) {
+        console.error('EXIF orient failed, fallback:', e)
+      }
+    }
+    setFile(f)
+    setPreview(URL.createObjectURL(f))
   }
 
   const submit = async () => {

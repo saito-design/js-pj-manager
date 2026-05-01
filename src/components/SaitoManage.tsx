@@ -180,12 +180,12 @@ export default function SaitoManage() {
           if (!prev || prev.id !== editingId) return prev
           const next = { ...prev }
           if (!next.pj_no && data.pj_no) {
-            const p = projects.find(pp => pp.pj_no === data.pj_no)
+            const p = projectsAugmented.find(pp => pp.pj_no === data.pj_no)
             next.pj_no = data.pj_no
             next.pj_name = p?.case_name || data.pj_name || null
           }
           if (!next.expense_item_code && data.expense_item_code) {
-            const it = items.find(i => i.code === data.expense_item_code)
+            const it = itemsAugmented.find(i => i.code === data.expense_item_code)
             next.expense_item_code = data.expense_item_code
             next.expense_item = it?.name || null
           }
@@ -200,12 +200,12 @@ export default function SaitoManage() {
     if (!editing || !prediction) return
     const next = { ...editing }
     if (prediction.pj_no) {
-      const p = projects.find(pp => pp.pj_no === prediction.pj_no)
+      const p = projectsAugmented.find(pp => pp.pj_no === prediction.pj_no)
       next.pj_no = prediction.pj_no
       next.pj_name = p?.case_name || prediction.pj_name || null
     }
     if (prediction.expense_item_code) {
-      const it = items.find(i => i.code === prediction.expense_item_code)
+      const it = itemsAugmented.find(i => i.code === prediction.expense_item_code)
       next.expense_item_code = prediction.expense_item_code
       next.expense_item = it?.name || null
     }
@@ -221,6 +221,39 @@ export default function SaitoManage() {
   }, [])
 
   const totalAmount = useMemo(() => expenses.reduce((s, e) => s + (e.total_amount ?? 0), 0), [expenses])
+
+  // PJ一覧: マスタ（予算書）に履歴から見つかったものを追加
+  const projectsAugmented = useMemo(() => {
+    const map = new Map<string, Project>()
+    for (const p of projects) map.set(p.pj_no, p)
+    for (const e of expenses) {
+      if (e.pj_no && !map.has(e.pj_no)) {
+        map.set(e.pj_no, {
+          pj_no: e.pj_no,
+          client_name: '',
+          case_name: e.pj_name || '(履歴)',
+          display_name: `${e.pj_no} ${e.pj_name || '(履歴)'}`,
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.pj_no.localeCompare(a.pj_no))
+  }, [projects, expenses])
+
+  // 経費項目一覧: マスタに履歴から見つかったものを追加
+  const itemsAugmented = useMemo(() => {
+    const map = new Map<string, ExpenseItem>()
+    for (const i of items) map.set(i.code, i)
+    for (const e of expenses) {
+      if (e.expense_item_code && !map.has(e.expense_item_code)) {
+        map.set(e.expense_item_code, {
+          code: e.expense_item_code,
+          name: e.expense_item || '(履歴)',
+          category: '履歴',
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+  }, [items, expenses])
 
   const updateExpense = async (id: string, patch: Partial<ReceiptSaito>) => {
     try {
@@ -457,7 +490,7 @@ export default function SaitoManage() {
           <span className="text-gray-600">PJ</span>
           <select value={pjFilter} onChange={e => setPjFilter(e.target.value)} className="px-2 py-1 border rounded min-w-[200px]">
             <option value="">すべて</option>
-            {projects.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
+            {projectsAugmented.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
           </select>
         </label>
         <div className="ml-auto text-xs text-gray-500">
@@ -542,7 +575,7 @@ export default function SaitoManage() {
                   <div className="text-gray-700">
                     PJ: <span className="font-mono">{prediction.pj_no}</span>
                     {(() => {
-                      const p = projects.find(pp => pp.pj_no === prediction.pj_no)
+                      const p = projectsAugmented.find(pp => pp.pj_no === prediction.pj_no)
                       return p ? <span className="text-gray-500"> {p.case_name}</span> : null
                     })()}
                   </div>
@@ -551,7 +584,7 @@ export default function SaitoManage() {
                   <div className="text-gray-700">
                     経費項目: <span className="font-mono">{prediction.expense_item_code}</span>
                     {(() => {
-                      const it = items.find(i => i.code === prediction.expense_item_code)
+                      const it = itemsAugmented.find(i => i.code === prediction.expense_item_code)
                       return it ? <span className="text-gray-500"> {it.name}</span> : null
                     })()}
                   </div>
@@ -583,21 +616,21 @@ export default function SaitoManage() {
               <label className="col-span-2 space-y-1">
                 <span className="text-gray-600 text-xs">PJ</span>
                 <select value={editing.pj_no || ''} onChange={e => {
-                  const p = projects.find(pp => pp.pj_no === e.target.value)
+                  const p = projectsAugmented.find(pp => pp.pj_no === e.target.value)
                   setEditing({ ...editing, pj_no: e.target.value || null, pj_name: p?.case_name || null })
                 }} className="w-full px-2 py-1 border rounded">
                   <option value="">未選択</option>
-                  {projects.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
+                  {projectsAugmented.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
                 </select>
               </label>
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">経費項目</span>
                 <select value={editing.expense_item_code || ''} onChange={e => {
-                  const it = items.find(i => i.code === e.target.value)
+                  const it = itemsAugmented.find(i => i.code === e.target.value)
                   setEditing({ ...editing, expense_item_code: e.target.value || null, expense_item: it?.name || null })
                 }} className="w-full px-2 py-1 border rounded">
                   <option value="">未選択</option>
-                  {items.map(i => <option key={i.code} value={i.code}>{i.code} {i.name}</option>)}
+                  {itemsAugmented.map(i => <option key={i.code} value={i.code}>{i.code} {i.name}</option>)}
                 </select>
               </label>
               <label className="space-y-1">
