@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'qrcode'
 import type { ReceiptSaito, Project, ExpenseItem, Department, TaxCategory } from '@/types'
 
@@ -100,6 +100,12 @@ export default function SaitoManage() {
   const [itemSaving, setItemSaving] = useState(false)
   const [itemError, setItemError] = useState('')
 
+  // PCからのアップロード（state/refのみ。実装はload定義後）
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number; errors: string[] }>({ done: 0, total: 0, errors: [] })
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
@@ -124,6 +130,34 @@ export default function SaitoManage() {
   }, [applyFilter, pjFilter])
 
   useEffect(() => { load() }, [load])
+
+  const uploadFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files).filter(f =>
+      f.type.startsWith('image/') || f.type === 'application/pdf'
+    )
+    if (list.length === 0) return
+    setUploading(true)
+    setUploadProgress({ done: 0, total: list.length, errors: [] })
+    const errors: string[] = []
+    for (const f of list) {
+      try {
+        const fd = new FormData()
+        fd.append('file', f)
+        fd.append('apply_month', applyFilter || getCurrentApplyMonth())
+        const res = await fetch('/api/expenses/submit', { method: 'POST', body: fd })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          errors.push(`${f.name}: ${d.error || res.status}`)
+        }
+      } catch (e) {
+        errors.push(`${f.name}: ${e instanceof Error ? e.message : 'failed'}`)
+      }
+      setUploadProgress(p => ({ ...p, done: p.done + 1, errors }))
+    }
+    setUploading(false)
+    if (uploadInputRef.current) uploadInputRef.current.value = ''
+    await load()
+  }, [applyFilter, load])
 
   // 編集モーダル開いたら予測APIを呼んで未入力項目に自動適用
   useEffect(() => {
@@ -281,6 +315,58 @@ export default function SaitoManage() {
             </div>
             {qrSrc && <img src={qrSrc} alt="QR" className="w-32 h-32 ml-auto" />}
           </div>
+        )}
+      </section>
+
+      {/* PCアップロード */}
+      <section
+        className={`bg-white border-2 ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-dashed border-gray-300'} rounded-xl p-5 transition-colors`}
+        onDragEnter={e => { e.preventDefault(); setDragOver(true) }}
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
+        onDrop={e => {
+          e.preventDefault()
+          setDragOver(false)
+          if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
+        }}
+      >
+        <input
+          ref={uploadInputRef}
+          type="file"
+          multiple
+          accept="image/*,application/pdf"
+          onChange={e => { if (e.target.files) uploadFiles(e.target.files) }}
+          className="hidden"
+        />
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm text-gray-600">
+            <div className="font-medium text-gray-700 mb-0.5">📎 ファイル / 画像をアップロード</div>
+            <div className="text-xs text-gray-500">複数同時OK・PDF/JPEG/PNG対応・申請年月は上のフィルタ値を使用</div>
+          </div>
+          <button
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={uploading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40"
+          >
+            {uploading ? `処理中 ${uploadProgress.done}/${uploadProgress.total}` : 'ファイル選択'}
+          </button>
+        </div>
+        {uploading && (
+          <div className="mt-3 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+            <div
+              className="bg-blue-600 h-full transition-all"
+              style={{ width: uploadProgress.total > 0 ? `${(uploadProgress.done / uploadProgress.total) * 100}%` : '0%' }}
+            />
+          </div>
+        )}
+        {!uploading && uploadProgress.errors.length > 0 && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700 space-y-0.5">
+            <div className="font-medium">失敗したファイル ({uploadProgress.errors.length}件):</div>
+            {uploadProgress.errors.map((er, i) => <div key={i}>• {er}</div>)}
+          </div>
+        )}
+        {!uploading && uploadProgress.total > 0 && uploadProgress.errors.length === 0 && (
+          <div className="mt-2 text-xs text-green-600">✓ {uploadProgress.total}件アップロード完了</div>
         )}
       </section>
 

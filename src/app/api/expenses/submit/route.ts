@@ -6,6 +6,7 @@ import { loadJsonByName, getDataFolderId, saveJsonFile, renameFile } from '@/lib
 import { requireAuth } from '@/lib/auth';
 import { extractReceipt } from '@/lib/claude';
 import { buildSaitoFilename, getCurrentApplyMonth } from '@/lib/filename';
+import { computePrediction, loadScheduleByDate } from '@/lib/prediction';
 import type { ReceiptSaito } from '@/types';
 import { randomUUID } from 'crypto';
 
@@ -54,10 +55,10 @@ export async function POST(req: NextRequest) {
     if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: 'ファイルサイズが大きすぎます (20MB上限)' }, { status: 400 });
 
     const apply_month = (form.get('apply_month') as string) || getCurrentApplyMonth();
-    const pj_no = (form.get('pj_no') as string) || null;
-    const pj_name = (form.get('pj_name') as string) || null;
-    const expense_item = (form.get('expense_item') as string) || null;
-    const expense_item_code = (form.get('expense_item_code') as string) || null;
+    const formPjNo = (form.get('pj_no') as string) || null;
+    const formPjName = (form.get('pj_name') as string) || null;
+    const formExpenseItem = (form.get('expense_item') as string) || null;
+    const formExpenseItemCode = (form.get('expense_item_code') as string) || null;
     const department_code = (form.get('department_code') as string) || null;
 
     const buf = Buffer.from(await file.arrayBuffer());
@@ -80,6 +81,37 @@ export async function POST(req: NextRequest) {
     const tax_rate = extracted?.tax_rate ?? null;
     const tax_category: '10' | '8' | null =
       tax_rate === 0.10 ? '10' : tax_rate === 0.08 ? '8' : null;
+
+    // 既存receipts.json読み込み（予測の履歴ソース＋追記用）
+    let expenses: ReceiptSaito[] = [];
+    try {
+      const data = await loadJsonByName<ReceiptSaito[]>('receipts.json', dataFolderId);
+      expenses = Array.isArray(data) ? data : [];
+    } catch {
+      expenses = [];
+    }
+
+    // 予測：フォームでPJ/経費項目が指定されていない場合のみ自動推定
+    let pj_no = formPjNo;
+    let pj_name = formPjName;
+    let expense_item = formExpenseItem;
+    let expense_item_code = formExpenseItemCode;
+    if (!pj_no || !expense_item_code) {
+      try {
+        const schedMatched = usage_date ? await loadScheduleByDate(usage_date) : [];
+        const pred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched);
+        if (!pj_no && pred.pj_no) {
+          pj_no = pred.pj_no;
+          pj_name = pred.pj_name || pj_name;
+        }
+        if (!expense_item_code && pred.expense_item_code) {
+          expense_item_code = pred.expense_item_code;
+          // expense_itemの名前は履歴から推定不可。コードのみ反映、PC側で名前補完
+        }
+      } catch (e) {
+        console.error('predict at submit failed (non-fatal):', e);
+      }
+    }
 
     const newFilename = buildSaitoFilename(
       { apply_month, pj_no, expense_item, vendor_name, usage_date, extra_tax_labels: [] },
@@ -116,13 +148,6 @@ export async function POST(req: NextRequest) {
       updated_at: now,
     };
 
-    let expenses: ReceiptSaito[] = [];
-    try {
-      const data = await loadJsonByName<ReceiptSaito[]>('receipts.json', dataFolderId);
-      expenses = Array.isArray(data) ? data : [];
-    } catch {
-      expenses = [];
-    }
     expenses.push(entry);
     await saveJsonFile('receipts.json', expenses, dataFolderId);
 
