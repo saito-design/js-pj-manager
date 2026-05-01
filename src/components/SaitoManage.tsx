@@ -144,6 +144,31 @@ export default function SaitoManage() {
 
   useEffect(() => { load() }, [load])
 
+  // スケジュールを初回マウント時にロード（PJフィルタの候補生成用）
+  useEffect(() => {
+    if (schedule === null) loadSchedule()
+  }, [schedule, loadSchedule])
+
+  // 申請年月のスケジュールに含まれるPJ番号一覧（フィルタdropdown用）
+  const pjOptionsForFilter = useMemo(() => {
+    if (!schedule?.records || !applyFilter) return projectsAugmented
+    const [fy, fm] = applyFilter.split('-')
+    const fmNum = String(parseInt(fm, 10))
+    const map = new Map<string, { pj_no: string; case_name: string; client_name: string }>()
+    for (const r of schedule.records) {
+      if (!r.PJコード) continue
+      if (r.年 !== fy || r.月 !== fmNum) continue
+      if (!map.has(r.PJコード)) {
+        map.set(r.PJコード, {
+          pj_no: r.PJコード,
+          case_name: r.件名 || '',
+          client_name: r.得意先名 || '',
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.pj_no.localeCompare(b.pj_no))
+  }, [schedule, applyFilter, projectsAugmented])
+
   const orientImage = async (f: File): Promise<File> => {
     if (!f.type.startsWith('image/') || typeof createImageBitmap === 'undefined') return f
     try {
@@ -587,7 +612,7 @@ export default function SaitoManage() {
           <span className="text-gray-600">PJ</span>
           <select value={pjFilter} onChange={e => setPjFilter(e.target.value)} className="px-2 py-1 border rounded min-w-[200px]">
             <option value="">すべて</option>
-            {projectsAugmented.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
+            {pjOptionsForFilter.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
           </select>
         </label>
         <div className="ml-auto text-xs text-gray-500">
