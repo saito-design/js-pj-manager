@@ -55,7 +55,12 @@ export async function loadScheduleByDate(date: string): Promise<ScheduleRecord[]
   );
   const data = JSON.parse(res.data as string);
   const records: ScheduleRecord[] = data.records || [];
-  return records.filter(r => r.date === date && (r.PJコード || '').trim());
+  // 件名「移動・前日入り」は予測候補から除外（実体PJセッションのみ使う）
+  return records.filter(r =>
+    r.date === date
+    && (r.PJコード || '').trim()
+    && (r.件名 || '') !== '移動・前日入り'
+  );
 }
 
 export function computePrediction(
