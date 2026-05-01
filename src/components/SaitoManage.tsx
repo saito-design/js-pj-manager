@@ -151,7 +151,7 @@ export default function SaitoManage() {
 
   // 申請年月のスケジュールに含まれるPJ番号一覧（フィルタdropdown用）
   const pjOptionsForFilter = useMemo(() => {
-    if (!schedule?.records || !applyFilter) return projectsAugmented
+    if (!schedule?.records || !applyFilter) return [] as { pj_no: string; case_name: string; client_name: string }[]
     const [fy, fm] = applyFilter.split('-')
     const fmNum = String(parseInt(fm, 10))
     const map = new Map<string, { pj_no: string; case_name: string; client_name: string }>()
@@ -167,7 +167,7 @@ export default function SaitoManage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.pj_no.localeCompare(b.pj_no))
-  }, [schedule, applyFilter, projectsAugmented])
+  }, [schedule, applyFilter])
 
   const orientImage = async (f: File): Promise<File> => {
     if (!f.type.startsWith('image/') || typeof createImageBitmap === 'undefined') return f
@@ -637,8 +637,8 @@ export default function SaitoManage() {
                 <tr>
                   <th className="px-2 py-2 text-left">利用日</th>
                   <th className="px-2 py-2 text-left">取引先</th>
-                  <th className="px-2 py-2 text-left">PJ</th>
-                  <th className="px-2 py-2 text-left">経費項目</th>
+                  <th className="px-2 py-2 text-left">企業先名</th>
+                  <th className="px-2 py-2 text-left">分類</th>
                   <th className="px-2 py-2 text-right">金額</th>
                   <th className="px-2 py-2 text-center">状態</th>
                   <th className="px-2 py-2"></th>
@@ -649,8 +649,8 @@ export default function SaitoManage() {
                   <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-2 py-2">{e.usage_date || '-'}</td>
                     <td className="px-2 py-2">{e.vendor_name || '-'}</td>
-                    <td className="px-2 py-2">{e.pj_no || '-'}</td>
-                    <td className="px-2 py-2">{e.expense_item || '-'}</td>
+                    <td className="px-2 py-2">{e.client_name || '-'}</td>
+                    <td className="px-2 py-2">{e.category || '-'}</td>
                     <td className="px-2 py-2 text-right">¥{(e.total_amount ?? 0).toLocaleString()}</td>
                     <td className="px-2 py-2 text-center">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] ${e.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -847,6 +847,15 @@ export default function SaitoManage() {
                 <span className="text-gray-600 text-xs">取引先</span>
                 <input value={editing.vendor_name || ''} onChange={e => setEditing({ ...editing, vendor_name: e.target.value })} className="w-full px-2 py-1 border rounded" />
               </label>
+              <label className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">登録番号（インボイスT番号）</span>
+                <input
+                  value={editing.invoice_no || ''}
+                  onChange={e => setEditing({ ...editing, invoice_no: e.target.value || null })}
+                  placeholder="T+13桁（例: T1234567890123）"
+                  className="w-full px-2 py-1 border rounded font-mono"
+                />
+              </label>
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">金額（税込）</span>
                 <input type="number" value={editing.total_amount ?? ''} onChange={e => setEditing({ ...editing, total_amount: e.target.value === '' ? null : Number(e.target.value) })} className="w-full px-2 py-1 border rounded" />
@@ -921,6 +930,7 @@ export default function SaitoManage() {
                   expense_item: editing.expense_item,
                   expense_item_code: editing.expense_item_code,
                   vendor_name: editing.vendor_name,
+                  invoice_no: editing.invoice_no,
                   total_amount: editing.total_amount,
                   tax_amount: editing.tax_amount,
                   tax_rate: editing.tax_rate,

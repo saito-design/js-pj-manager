@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
     const vendor_name = extracted?.store_name || null;
     const usage_date = extracted?.date || null;
     const total_amount = extracted?.total_amount ?? null;
+    const invoice_no = extracted?.invoice_no || null;
     const tax_rate = extracted?.tax_rate ?? null;
     const tax_category: '10' | '8' | null =
       tax_rate === 0.10 ? '10' : tax_rate === 0.08 ? '8' : null;
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest) {
       apply_month,
       usage_date,
       category,
+      invoice_no,
       total_amount,
       tax_amount,
       tax_rate,

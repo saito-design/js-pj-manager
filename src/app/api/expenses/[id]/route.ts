@@ -34,7 +34,7 @@ export async function PUT(
 
     const allowed = [
       'pj_no', 'pj_name', 'client_name', 'expense_item', 'expense_item_code', 'category',
-      'vendor_name', 'apply_month', 'usage_date',
+      'vendor_name', 'apply_month', 'usage_date', 'invoice_no',
       'total_amount', 'tax_amount', 'tax_rate', 'tax_category', 'extra_tax_labels',
       'department_code', 'status',
     ] as const;

@@ -33,6 +33,7 @@ export interface ReceiptSaito {
   vendor_name: string | null       // 取引先名
   apply_month: string | null       // 'YYYY-MM'
   usage_date: string | null        // 'YYYY-MM-DD'
+  invoice_no: string | null        // インボイス登録番号（T+13桁）
   total_amount: number | null
   tax_amount: number | null
   tax_rate: number | null          // 0.10 / 0.08 / 0 / null
