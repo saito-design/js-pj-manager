@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'qrcode'
-import Cropper, { Area } from 'react-easy-crop'
+import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 import type { ReceiptSaito, Project, ExpenseItem, Department, TaxCategory } from '@/types'
 import { CATEGORIES } from '@/lib/category'
 
@@ -107,10 +108,10 @@ export default function SaitoManage() {
   // 編集モーダルの画像トリミング
   const [showCropper, setShowCropper] = useState(false)
   const [cropImageSrc, setCropImageSrc] = useState<string>('')
-  const [crop, setCrop] = useState({ x: 0, y: 0 })
-  const [zoom, setZoom] = useState(1)
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
+  const [crop, setCrop] = useState<Crop>({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
   const [savingFile, setSavingFile] = useState(false)
+  const cropImgRef = useRef<HTMLImageElement | null>(null)
 
   // PCからのアップロード（state/refのみ。実装はload定義後）
   const [uploading, setUploading] = useState(false)
@@ -237,39 +238,30 @@ export default function SaitoManage() {
     [editing?.id, editing?.source_file_id, editing?.updated_at]
   )
 
-  const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
-    setCroppedAreaPixels(areaPixels)
-  }, [])
-
   const startCrop = useCallback(() => {
     if (!editImageUrl) return
     setCropImageSrc(editImageUrl)
-    setCrop({ x: 0, y: 0 })
-    setZoom(1)
-    setCroppedAreaPixels(null)
+    setCrop({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
+    setCompletedCrop(null)
     setShowCropper(true)
   }, [editImageUrl])
 
   const saveCroppedImage = async () => {
-    if (!editing || !croppedAreaPixels) return
+    if (!editing || !completedCrop || !cropImgRef.current) return
     setSavingFile(true)
     try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const i = new Image()
-        i.crossOrigin = 'anonymous'
-        i.onload = () => resolve(i)
-        i.onerror = reject
-        i.src = cropImageSrc
-      })
+      const img = cropImgRef.current
+      // 表示サイズ→自然サイズへの変換
+      const scaleX = img.naturalWidth / img.width
+      const scaleY = img.naturalHeight / img.height
+      const sx = completedCrop.x * scaleX
+      const sy = completedCrop.y * scaleY
+      const sw = completedCrop.width * scaleX
+      const sh = completedCrop.height * scaleY
       const c = document.createElement('canvas')
-      c.width = croppedAreaPixels.width
-      c.height = croppedAreaPixels.height
-      const ctx = c.getContext('2d')!
-      ctx.drawImage(
-        img,
-        croppedAreaPixels.x, croppedAreaPixels.y, croppedAreaPixels.width, croppedAreaPixels.height,
-        0, 0, croppedAreaPixels.width, croppedAreaPixels.height,
-      )
+      c.width = sw
+      c.height = sh
+      c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
       const blob = await new Promise<Blob>((resolve, reject) =>
         c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92)
       )
@@ -668,36 +660,34 @@ export default function SaitoManage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="relative bg-black rounded" style={{ height: '50vh', minHeight: '300px' }}>
-                      <Cropper
-                        image={cropImageSrc}
+                    <p className="text-xs text-gray-500">枠の四隅・辺をドラッグしてトリミング範囲を調整してください</p>
+                    <div className="bg-gray-900 rounded p-2 flex items-center justify-center" style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                      <ReactCrop
                         crop={crop}
-                        zoom={zoom}
-                        aspect={undefined}
-                        onCropChange={setCrop}
-                        onZoomChange={setZoom}
-                        onCropComplete={onCropComplete}
-                        restrictPosition={false}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-12">拡大</span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={3}
-                        step={0.05}
-                        value={zoom}
-                        onChange={e => setZoom(Number(e.target.value))}
-                        className="flex-1"
-                      />
-                      <span className="text-xs font-mono w-10 text-right">{zoom.toFixed(1)}x</span>
+                        onChange={c => setCrop(c)}
+                        onComplete={c => setCompletedCrop(c)}
+                        keepSelection
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          ref={cropImgRef}
+                          src={cropImageSrc}
+                          alt="トリミング対象"
+                          style={{ maxHeight: '65vh', display: 'block' }}
+                          onLoad={e => {
+                            const i = e.currentTarget
+                            // 初期 crop = 画像全体
+                            setCrop({ unit: '%', x: 0, y: 0, width: 100, height: 100 })
+                            setCompletedCrop({ unit: 'px', x: 0, y: 0, width: i.width, height: i.height })
+                          }}
+                        />
+                      </ReactCrop>
                     </div>
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => setShowCropper(false)} className="px-3 py-1 text-xs text-gray-600 hover:text-gray-900">キャンセル</button>
                       <button
                         onClick={saveCroppedImage}
-                        disabled={savingFile || !croppedAreaPixels}
+                        disabled={savingFile || !completedCrop}
                         className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-40"
                       >{savingFile ? '保存中...' : '✓ Driveに保存'}</button>
                     </div>
