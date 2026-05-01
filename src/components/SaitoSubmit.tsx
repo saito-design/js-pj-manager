@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import Cropper, { Area } from 'react-easy-crop'
+import { useState, useRef, useEffect } from 'react'
+
+type CropArea = { x: number; y: number; width: number; height: number }
 
 function getCurrentApplyMonth() {
   const d = new Date()
@@ -132,7 +133,7 @@ async function makeOrientedPreviewUrl(file: File): Promise<string> {
 // 画像をクロップ＋回転＋フィルタ適用してJPEG Fileを生成
 async function processImage(
   file: File,
-  cropArea: Area | null,
+  cropArea: CropArea | null,
   rotation: number,
   brightness: number,
   contrast: number,
@@ -166,9 +167,6 @@ export default function SaitoSubmit() {
   const [applyMonth, setApplyMonth] = useState(getCurrentApplyMonth())
 
   // 画像加工
-  const [crop, setCrop] = useState({ x: 0, y: 0 })
-  const [zoom, setZoom] = useState(1)
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [rotation, setRotation] = useState(0)
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
@@ -190,15 +188,8 @@ export default function SaitoSubmit() {
     return () => { if (preview) URL.revokeObjectURL(preview) }
   }, [preview])
 
-  const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
-    setCroppedAreaPixels(areaPixels)
-  }, [])
-
   const handleFile = async (f: File | null) => {
     if (preview) URL.revokeObjectURL(preview)
-    setCrop({ x: 0, y: 0 })
-    setZoom(1)
-    setCroppedAreaPixels(null)
     setRotation(0)
     setBrightness(100)
     setContrast(100)
@@ -230,8 +221,8 @@ export default function SaitoSubmit() {
     try {
       let outFile = file
       if (file.type.startsWith('image/')) {
-        const needsProc = !!croppedAreaPixels || rotation !== 0 || brightness !== 100 || contrast !== 100
-        if (needsProc) outFile = await processImage(file, croppedAreaPixels, rotation, brightness, contrast)
+        const needsProc = rotation !== 0 || brightness !== 100 || contrast !== 100
+        if (needsProc) outFile = await processImage(file, null, rotation, brightness, contrast)
       }
       const fd = new FormData()
       fd.append('file', outFile)
@@ -355,43 +346,23 @@ export default function SaitoSubmit() {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* プレビュー＋クロップ */}
+              {/* プレビュー */}
               {file.type.startsWith('image/') && preview ? (
                 <>
-                  <div className="relative bg-black rounded-lg overflow-hidden" style={{ height: '60vh', minHeight: '300px' }}>
-                    <Cropper
-                      image={preview}
-                      crop={crop}
-                      zoom={zoom}
-                      rotation={rotation}
-                      aspect={undefined}
-                      onCropChange={setCrop}
-                      onZoomChange={setZoom}
-                      onRotationChange={setRotation}
-                      onCropComplete={onCropComplete}
-                      restrictPosition={false}
-                      style={{ mediaStyle: { filter: `brightness(${brightness}%) contrast(${contrast}%)` } }}
+                  <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                    <img
+                      src={preview}
+                      alt="preview"
+                      className="w-full h-auto block"
+                      style={{
+                        transform: `rotate(${rotation}deg)`,
+                        filter: `brightness(${brightness}%) contrast(${contrast}%)`,
+                      }}
                     />
                   </div>
 
                   {/* 調整UI */}
                   <div className="space-y-3 bg-gray-50 rounded-lg p-3">
-                    {/* 拡大 */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-12">拡大</span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={3}
-                        step={0.05}
-                        value={zoom}
-                        onChange={e => setZoom(Number(e.target.value))}
-                        className="flex-1"
-                      />
-                      <span className="text-xs font-mono text-gray-500 w-10 text-right">{zoom.toFixed(1)}x</span>
-                    </div>
-
-                    {/* 回転 */}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 w-12">回転</span>
                       <button
@@ -406,7 +377,6 @@ export default function SaitoSubmit() {
                       >↻ 右90°</button>
                     </div>
 
-                    {/* 明るさ */}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 w-12">明るさ</span>
                       <input
@@ -420,7 +390,6 @@ export default function SaitoSubmit() {
                       <span className="text-xs font-mono text-gray-500 w-10 text-right">{brightness}%</span>
                     </div>
 
-                    {/* コントラスト */}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500 w-12">くっきり</span>
                       <input
@@ -434,18 +403,17 @@ export default function SaitoSubmit() {
                       <span className="text-xs font-mono text-gray-500 w-10 text-right">{contrast}%</span>
                     </div>
 
-                    {/* リセット */}
-                    {(zoom !== 1 || rotation !== 0 || brightness !== 100 || contrast !== 100) && (
+                    {(rotation !== 0 || brightness !== 100 || contrast !== 100) && (
                       <button
                         type="button"
-                        onClick={() => { setZoom(1); setRotation(0); setBrightness(100); setContrast(100); setCrop({ x: 0, y: 0 }) }}
+                        onClick={() => { setRotation(0); setBrightness(100); setContrast(100) }}
                         className="text-xs text-gray-500 hover:text-gray-800"
                       >調整をリセット</button>
                     )}
                   </div>
 
                   <p className="text-[11px] text-gray-400">
-                    ピンチ／ドラッグでトリミング。範囲外も指定可能です。
+                    余白は自動でカット済み。必要なら回転・明るさで調整してください。
                   </p>
                 </>
               ) : (
