@@ -42,6 +42,7 @@ export interface ReceiptSaito {
   department_code: string | null   // 5101 etc.
   source_file: string | null       // Drive上のファイル名
   source_file_id: string | null    // Drive file ID
+  notes: string | null             // 備考（同行者・用途詳細など）
   status: 'pending' | 'confirmed'
   raw_text: string | null
   created_at: string

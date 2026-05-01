@@ -105,6 +105,7 @@ export async function POST(req: NextRequest) {
     let expense_item = formExpenseItem;
     let expense_item_code = formExpenseItemCode;
     let department_code = formDepartmentCode;
+    let notes: string | null = null;
     try {
       const schedMatched = usage_date ? await loadScheduleByDate(usage_date) : [];
       // pj_no/client_nameがスケジュールから決まる順序を考慮：先に1回呼んでpj_no確定、その確定値を ctx で再呼出
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest) {
       if (!department_code && pred.department_code) {
         department_code = pred.department_code;
       }
+      if (pred.notes) notes = pred.notes;
     } catch (e) {
       console.error('predict at submit failed (non-fatal):', e);
     }
@@ -177,6 +179,7 @@ export async function POST(req: NextRequest) {
       tax_category,
       extra_tax_labels: [],
       department_code,
+      notes,
       source_file: newFilename,
       source_file_id: tempId,
       status: 'pending',

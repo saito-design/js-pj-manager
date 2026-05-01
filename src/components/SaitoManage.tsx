@@ -6,6 +6,7 @@ import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
 import type { ReceiptSaito, Project, ExpenseItem, Department, TaxCategory } from '@/types'
 import { CATEGORIES } from '@/lib/category'
+import { buildSaitoFilename } from '@/lib/filename'
 
 interface ScheduleRecord {
   入力: string; PJコード: string; 得意先名: string
@@ -68,6 +69,8 @@ export default function SaitoManage() {
     client_name: string | null
     expense_item_code: string | null
     department_code: string | null
+    category: string | null
+    notes: string | null
     source: 'schedule' | 'history' | 'both' | 'none'
     confidence: number
     candidates: {
@@ -281,6 +284,9 @@ export default function SaitoManage() {
           }
           if (!next.category && data.category) {
             next.category = data.category
+          }
+          if (!next.notes && data.notes) {
+            next.notes = data.notes
           }
           return next
         })
@@ -983,6 +989,16 @@ export default function SaitoManage() {
                   })}
                 </div>
               </div>
+              <label className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">備考（同行者・用途詳細など）</span>
+                <textarea
+                  value={editing.notes || ''}
+                  onChange={e => setEditing({ ...editing, notes: e.target.value || null })}
+                  placeholder="例: 同行者 山田・佐藤 / 受講者用 / 出張先での会食"
+                  rows={2}
+                  className="w-full px-2 py-1 border rounded text-sm"
+                />
+              </label>
               <div className="col-span-2 space-y-1">
                 <span className="text-gray-600 text-xs">状態</span>
                 <div className="flex gap-2">
@@ -1002,9 +1018,36 @@ export default function SaitoManage() {
                 </div>
               </div>
             </div>
-            <div className="text-[10px] text-gray-400">
-              ファイル: {editing.source_file || '-'}
-            </div>
+            {(() => {
+              const before = editing.source_file || '-'
+              const after = editing.source_file
+                ? buildSaitoFilename(
+                    {
+                      apply_month: editing.apply_month,
+                      pj_no: editing.pj_no,
+                      client_name: editing.client_name,
+                      category: editing.category,
+                      vendor_name: editing.vendor_name,
+                      usage_date: editing.usage_date,
+                      extra_tax_labels: editing.extra_tax_labels || [],
+                    },
+                    editing.source_file,
+                  )
+                : '-'
+              const changed = before !== after
+              return (
+                <div className="text-[11px] space-y-0.5 bg-gray-50 rounded p-2 font-mono">
+                  <div className="text-gray-500">
+                    <span className="inline-block w-12 text-gray-400">現在:</span>
+                    <span className="break-all">{before}</span>
+                  </div>
+                  <div className={changed ? 'text-blue-700' : 'text-gray-400'}>
+                    <span className="inline-block w-12 text-gray-400">保存後:</span>
+                    <span className="break-all">{after}{changed && ' ←変更'}</span>
+                  </div>
+                </div>
+              )
+            })()}
             <div className="flex gap-2 justify-end pt-2">
               <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">キャンセル</button>
               {(() => {
@@ -1034,6 +1077,7 @@ export default function SaitoManage() {
                   tax_category: e.tax_category,
                   extra_tax_labels: e.extra_tax_labels || [],
                   department_code: e.department_code,
+                  notes: e.notes,
                   status: e.status,
                 })
                 return (

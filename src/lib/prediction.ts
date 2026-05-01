@@ -10,6 +10,7 @@ export interface PredictResult {
   expense_item_code: string | null;
   department_code: string | null;
   category: string | null;
+  notes: string | null;
   source: 'schedule' | 'history' | 'both' | 'none';
   confidence: number;
   candidates: {
@@ -72,7 +73,7 @@ export function computePrediction(
 ): PredictResult {
   const empty: PredictResult = {
     pj_no: null, pj_name: null, client_name: null, expense_item_code: null,
-    department_code: null, category: null,
+    department_code: null, category: null, notes: null,
     source: 'none', confidence: 0,
     candidates: { schedule: [], history: [] },
   };
@@ -183,9 +184,34 @@ export function computePrediction(
   let category: string | null = topKey(catCount);
   if (!category && vendor) category = guessCategory(vendor);
 
-  if (!pj_no && !expense_item_code && !department_code && !client_name && !category) return empty;
+  // 備考予測:
+  // 1) 同 PJ + 同 vendor 履歴の最新 notes
+  // 2) 同 vendor 履歴の最新 notes
+  // 3) 同 PJ 履歴の最新 notes
+  const ctxPj = ctx?.pj_no || pj_no;
+  const findRecentNotes = (filt: (e: ReceiptSaito) => boolean): string | null => {
+    const cands = expenses.filter(e => e.notes && filt(e));
+    if (cands.length === 0) return null;
+    cands.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    return cands[0].notes;
+  };
+  let notes: string | null = null;
+  if (ctxPj && vendor) {
+    notes = findRecentNotes(e => e.pj_no === ctxPj
+      && !!e.vendor_name
+      && (e.vendor_name.toLowerCase().includes(vendor.toLowerCase()) || vendor.toLowerCase().includes(e.vendor_name.toLowerCase())));
+  }
+  if (!notes && vendor) {
+    notes = findRecentNotes(e => !!e.vendor_name
+      && (e.vendor_name.toLowerCase().includes(vendor.toLowerCase()) || vendor.toLowerCase().includes(e.vendor_name.toLowerCase())));
+  }
+  if (!notes && ctxPj) {
+    notes = findRecentNotes(e => e.pj_no === ctxPj);
+  }
+
+  if (!pj_no && !expense_item_code && !department_code && !client_name && !category && !notes) return empty;
   return {
-    pj_no, pj_name, client_name, expense_item_code, department_code, category,
+    pj_no, pj_name, client_name, expense_item_code, department_code, category, notes,
     source, confidence,
     candidates: {
       schedule: scheduleCandidates,

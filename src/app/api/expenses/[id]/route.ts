@@ -36,7 +36,7 @@ export async function PUT(
       'pj_no', 'pj_name', 'client_name', 'expense_item', 'expense_item_code', 'category',
       'vendor_name', 'apply_month', 'usage_date', 'invoice_no',
       'total_amount', 'tax_amount', 'tax_rate', 'tax_category', 'extra_tax_labels',
-      'department_code', 'status',
+      'department_code', 'notes', 'status',
     ] as const;
     const before = { ...expenses[idx] };
     for (const k of allowed) {
