@@ -105,7 +105,13 @@ export async function POST(req: NextRequest) {
     let department_code = formDepartmentCode;
     try {
       const schedMatched = usage_date ? await loadScheduleByDate(usage_date) : [];
-      const pred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched);
+      // pj_no/client_nameがスケジュールから決まる順序を考慮：先に1回呼んでpj_no確定、その確定値を ctx で再呼出
+      const firstPred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched, { tax_rate });
+      const pred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched, {
+        pj_no: pj_no || firstPred.pj_no,
+        client_name: client_name || firstPred.client_name,
+        tax_rate,
+      });
       if (!pj_no && pred.pj_no) {
         pj_no = pred.pj_no;
         pj_name = pred.pj_name || pj_name;

@@ -186,6 +186,9 @@ export default function SaitoManage() {
     const params = new URLSearchParams()
     if (vendor) params.set('vendor_name', vendor)
     if (usage) params.set('usage_date', usage)
+    if (editing.pj_no) params.set('pj_no', editing.pj_no)
+    if (editing.client_name) params.set('client_name', editing.client_name)
+    if (editing.tax_rate != null) params.set('tax_rate', String(editing.tax_rate))
     fetch(`/api/expenses/predict?${params}`)
       .then(r => r.json())
       .then(data => {

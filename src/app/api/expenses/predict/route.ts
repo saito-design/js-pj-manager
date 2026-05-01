@@ -14,6 +14,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const vendor = (searchParams.get('vendor_name') || '').trim();
     const usageDate = (searchParams.get('usage_date') || '').trim();
+    const pjNo = (searchParams.get('pj_no') || '').trim() || null;
+    const clientName = (searchParams.get('client_name') || '').trim() || null;
+    const taxRateStr = (searchParams.get('tax_rate') || '').trim();
+    const taxRate = taxRateStr ? Number(taxRateStr) : null;
 
     let schedMatched: { PJコード?: string; 得意先名?: string; 件名?: string; date?: string }[] = [];
     if (usageDate) {
@@ -27,7 +31,11 @@ export async function GET(req: NextRequest) {
       expenses = Array.isArray(d) ? d : [];
     } catch { expenses = []; }
 
-    const result = computePrediction(vendor, usageDate, expenses, schedMatched);
+    const result = computePrediction(vendor, usageDate, expenses, schedMatched, {
+      pj_no: pjNo,
+      client_name: clientName,
+      tax_rate: taxRate,
+    });
     return NextResponse.json(result);
   } catch (e) {
     console.error('GET predict error:', e);

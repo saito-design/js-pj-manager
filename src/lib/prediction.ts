@@ -61,6 +61,7 @@ export function computePrediction(
   usageDate: string,
   expenses: ReceiptSaito[],
   schedMatched: ScheduleRecord[],
+  ctx?: { pj_no?: string | null; client_name?: string | null; tax_rate?: number | null },
 ): PredictResult {
   const empty: PredictResult = {
     pj_no: null, pj_name: null, client_name: null, expense_item_code: null,
@@ -106,7 +107,7 @@ export function computePrediction(
   };
   const histTopPj = topKey(pjCount);
   const histTopIt = topKey(itCount);
-  const histTopDept = topKey(deptCount);
+  const histTopDeptByVendor = topKey(deptCount);
 
   const schedTopPj = scheduleCandidates[0]?.pj_no || null;
   const schedTopClient = scheduleCandidates[0]?.client_name || null;
@@ -136,8 +137,34 @@ export function computePrediction(
     confidence = historyMatched.length >= 3 ? 0.8 : historyMatched.length >= 2 ? 0.6 : 0.4;
   }
 
-  const expense_item_code = histTopIt;
-  const department_code = histTopDept;
+  // 部署予測の優先順位:
+  // 1) 同 pj_no の履歴最頻値
+  // 2) 同 client_name の履歴最頻値
+  // 3) vendor 履歴最頻値
+  const ctxPjNo = ctx?.pj_no || pj_no;
+  const ctxClient = ctx?.client_name || client_name;
+  const topDeptIn = (filterFn: (e: ReceiptSaito) => boolean): string | null => {
+    const m = new Map<string, number>();
+    for (const e of expenses) {
+      if (e.department_code && filterFn(e)) m.set(e.department_code, (m.get(e.department_code) || 0) + 1);
+    }
+    return topKey(m);
+  };
+  let department_code: string | null = null;
+  if (ctxPjNo) department_code = topDeptIn(e => e.pj_no === ctxPjNo);
+  if (!department_code && ctxClient) {
+    department_code = topDeptIn(e => !!e.client_name && (e.client_name.includes(ctxClient) || ctxClient.includes(e.client_name)));
+  }
+  if (!department_code) department_code = histTopDeptByVendor;
+
+  // 経費項目予測:
+  // 1) 同 vendor 履歴
+  // 2) 税率ベースのデフォルト (10%→601 業務雑費 / 8%→5331 業務雑費【軽】)
+  let expense_item_code: string | null = histTopIt;
+  if (!expense_item_code && ctx?.tax_rate != null) {
+    if (ctx.tax_rate === 0.10) expense_item_code = '601';
+    else if (ctx.tax_rate === 0.08) expense_item_code = '5331';
+  }
 
   if (!pj_no && !expense_item_code && !department_code && !client_name) return empty;
   return {
