@@ -46,47 +46,40 @@ async function loadImage(file: File): Promise<{ width: number; height: number; s
   return { width: img.naturalWidth, height: img.naturalHeight, source: img }
 }
 
-// 背景色（四隅サンプル平均）と異なるピクセルの bbox を検出
-function detectContentBox(imgData: ImageData, threshold = 60, padding = 8): { x: number; y: number; w: number; h: number } | null {
+// 「明るいピクセル＝白いレシート」として bbox 検出
+// 行/列ごとの明るいピクセル密度から外側のノイズを除去
+function detectContentBox(imgData: ImageData, brightnessThreshold = 170, padding = 12): { x: number; y: number; w: number; h: number } | null {
   const { data, width, height } = imgData
-  const sample = 30
-  let br = 0, bg = 0, bb = 0, n = 0
-  const corners: [number, number][] = [
-    [0, 0], [width - sample, 0], [0, height - sample], [width - sample, height - sample],
-  ]
-  for (const [cx, cy] of corners) {
-    for (let dy = 0; dy < sample; dy++) {
-      for (let dx = 0; dx < sample; dx++) {
-        const i = ((cy + dy) * width + (cx + dx)) * 4
-        br += data[i]; bg += data[i + 1]; bb += data[i + 2]; n++
-      }
-    }
-  }
-  br /= n; bg /= n; bb /= n
-  let minX = width, maxX = 0, minY = height, maxY = 0, found = false
-  // ステップサンプリングで高速化（精度は若干粗くても十分）
   const step = Math.max(1, Math.floor(Math.min(width, height) / 800))
+  const rows = new Int32Array(height)
+  const cols = new Int32Array(width)
+  let count = 0
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       const i = (y * width + x) * 4
-      if (Math.abs(data[i] - br) + Math.abs(data[i + 1] - bg) + Math.abs(data[i + 2] - bb) > threshold) {
-        if (x < minX) minX = x
-        if (x > maxX) maxX = x
-        if (y < minY) minY = y
-        if (y > maxY) maxY = y
-        found = true
-      }
+      const gray = (data[i] + data[i + 1] + data[i + 2]) / 3
+      if (gray > brightnessThreshold) { rows[y]++; cols[x]++; count++ }
     }
   }
-  if (!found) return null
-  minX = Math.max(0, minX - padding)
-  minY = Math.max(0, minY - padding)
-  maxX = Math.min(width - 1, maxX + padding)
-  maxY = Math.min(height - 1, maxY + padding)
-  // 検出結果が画像の半分未満ならノイズと判定して採用しない
-  const w = maxX - minX + 1, h = maxY - minY + 1
-  if (w * h < width * height * 0.1) return null
-  return { x: minX, y: minY, w, h }
+  if (count === 0) return null
+  let rowMax = 0, colMax = 0
+  for (let y = 0; y < height; y++) if (rows[y] > rowMax) rowMax = rows[y]
+  for (let x = 0; x < width; x++) if (cols[x] > colMax) colMax = cols[x]
+  const rowThr = Math.max(2, rowMax * 0.15)
+  const colThr = Math.max(2, colMax * 0.15)
+  let top = -1, bottom = -1, left = -1, right = -1
+  for (let y = 0; y < height; y++) if (rows[y] >= rowThr) { top = y; break }
+  for (let y = height - 1; y >= 0; y--) if (rows[y] >= rowThr) { bottom = y; break }
+  for (let x = 0; x < width; x++) if (cols[x] >= colThr) { left = x; break }
+  for (let x = width - 1; x >= 0; x--) if (cols[x] >= colThr) { right = x; break }
+  if (top < 0 || bottom < 0 || left < 0 || right < 0) return null
+  const x0 = Math.max(0, left - padding)
+  const y0 = Math.max(0, top - padding)
+  const x1 = Math.min(width - 1, right + padding)
+  const y1 = Math.min(height - 1, bottom + padding)
+  const w = x1 - x0 + 1, h = y1 - y0 + 1
+  if (w * h < width * height * 0.05) return null
+  return { x: x0, y: y0, w, h }
 }
 
 // EXIF補正 + 縦向き強制 + 余白自動カット

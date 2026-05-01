@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
     }
 
     const newFilename = buildSaitoFilename(
-      { apply_month, pj_no, expense_item, vendor_name, usage_date, extra_tax_labels: [] },
+      { apply_month, pj_no, client_name, expense_item, vendor_name, usage_date, extra_tax_labels: [] },
       origName,
     );
 

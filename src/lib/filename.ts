@@ -1,11 +1,12 @@
 /**
  * saito向け電帳法準拠ファイル名生成
- * フォーマット: {申請年月}_{PJ番号}_{経費項目}_{取引先}_{利用日}.{ext}
- * 例: 2026-05_01-250131_交通費_JR東日本_2026-04-25.pdf
+ * フォーマット: {申請年月}_{PJ番号}_{企業名}_{経費項目}_{取引先}_{利用日}.{ext}
+ * 例: 2026-05_01260289_岡山マルイ_業務雑費_院庄タクシー_2026-04-16.jpg
  */
 export interface FilenameInput {
   apply_month: string | null   // 'YYYY-MM'
   pj_no: string | null
+  client_name: string | null   // 企業名（客先）
   expense_item: string | null
   vendor_name: string | null
   usage_date: string | null    // 'YYYY-MM-DD'
@@ -23,6 +24,7 @@ export function buildSaitoFilename(input: FilenameInput, originalFilename: strin
     : '';
   const apply = sanitize(input.apply_month, 7);
   const pj = sanitize(input.pj_no, 12);
+  const client = sanitize(input.client_name, 16);
   const item = sanitize(input.expense_item, 12);
   const vendor = sanitize(input.vendor_name, 20);
   const usage = sanitize(input.usage_date, 10);
@@ -31,7 +33,7 @@ export function buildSaitoFilename(input: FilenameInput, originalFilename: strin
     .map(l => sanitize(l, 8))
     .join('_');
   const tail = extras ? `_${extras}` : '';
-  return `${apply}_${pj}_${item}_${vendor}_${usage}${tail}${ext}`;
+  return `${apply}_${pj}_${client}_${item}_${vendor}_${usage}${tail}${ext}`;
 }
 
 export function getCurrentApplyMonth(): string {
