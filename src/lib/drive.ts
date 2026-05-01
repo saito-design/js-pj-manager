@@ -110,7 +110,13 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
-  await drive.files.delete({ fileId, supportsAllDrives: true });
+  // SAは所有者でない場合 permanent delete できない（canDelete=false）
+  // ゴミ箱移動（canTrash）で対応 — Drive側で30日後に自動消去
+  await drive.files.update({
+    fileId,
+    requestBody: { trashed: true },
+    supportsAllDrives: true,
+  });
 }
 
 export async function renameFile(fileId: string, newName: string): Promise<void> {
