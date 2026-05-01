@@ -205,16 +205,17 @@ export default function SaitoManage() {
       .then(data => {
         if (!data || !data.source || data.source === 'none') { setPrediction(null); return }
         setPrediction(data)
-        // 未入力の項目だけデフォルト反映（既に手入力済みなら上書きしない）
+        // schedule系（日付駆動）は常に上書き、history系（vendor駆動）は空欄のみ
+        const fromSchedule = data.source === 'schedule' || data.source === 'both'
         setEditing(prev => {
           if (!prev || prev.id !== editingId) return prev
           const next = { ...prev }
-          if (!next.pj_no && data.pj_no) {
+          if (data.pj_no && (fromSchedule || !next.pj_no)) {
             const p = projectsAugmented.find(pp => pp.pj_no === data.pj_no)
             next.pj_no = data.pj_no
             next.pj_name = p?.case_name || data.pj_name || null
           }
-          if (!next.client_name && data.client_name) {
+          if (data.client_name && (fromSchedule || !next.client_name)) {
             next.client_name = data.client_name
           }
           if (!next.expense_item_code && data.expense_item_code) {
