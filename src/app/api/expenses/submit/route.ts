@@ -57,9 +57,10 @@ export async function POST(req: NextRequest) {
     const apply_month = (form.get('apply_month') as string) || getCurrentApplyMonth();
     const formPjNo = (form.get('pj_no') as string) || null;
     const formPjName = (form.get('pj_name') as string) || null;
+    const formClientName = (form.get('client_name') as string) || null;
     const formExpenseItem = (form.get('expense_item') as string) || null;
     const formExpenseItemCode = (form.get('expense_item_code') as string) || null;
-    const department_code = (form.get('department_code') as string) || null;
+    const formDepartmentCode = (form.get('department_code') as string) || null;
 
     const buf = Buffer.from(await file.arrayBuffer());
     const mime = file.type || 'application/octet-stream';
@@ -77,10 +78,14 @@ export async function POST(req: NextRequest) {
     const vendor_name = extracted?.store_name || null;
     const usage_date = extracted?.date || null;
     const total_amount = extracted?.total_amount ?? null;
-    const tax_amount = extracted?.tax_amount ?? null;
     const tax_rate = extracted?.tax_rate ?? null;
     const tax_category: '10' | '8' | null =
       tax_rate === 0.10 ? '10' : tax_rate === 0.08 ? '8' : null;
+    // 消費税: OCRが取れていればそれを使う。なければ total × rate / (1+rate) で逆算
+    let tax_amount = extracted?.tax_amount ?? null;
+    if (tax_amount == null && total_amount != null && tax_rate != null && tax_rate > 0) {
+      tax_amount = Math.round(total_amount * tax_rate / (1 + tax_rate));
+    }
 
     // 既存receipts.json読み込み（予測の履歴ソース＋追記用）
     let expenses: ReceiptSaito[] = [];
@@ -91,26 +96,36 @@ export async function POST(req: NextRequest) {
       expenses = [];
     }
 
-    // 予測：フォームでPJ/経費項目が指定されていない場合のみ自動推定
+    // 予測：未指定項目をスケジュール＋履歴から自動推定
     let pj_no = formPjNo;
     let pj_name = formPjName;
+    let client_name = formClientName;
     let expense_item = formExpenseItem;
     let expense_item_code = formExpenseItemCode;
-    if (!pj_no || !expense_item_code) {
-      try {
-        const schedMatched = usage_date ? await loadScheduleByDate(usage_date) : [];
-        const pred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched);
-        if (!pj_no && pred.pj_no) {
-          pj_no = pred.pj_no;
-          pj_name = pred.pj_name || pj_name;
-        }
-        if (!expense_item_code && pred.expense_item_code) {
-          expense_item_code = pred.expense_item_code;
-          // expense_itemの名前は履歴から推定不可。コードのみ反映、PC側で名前補完
-        }
-      } catch (e) {
-        console.error('predict at submit failed (non-fatal):', e);
+    let department_code = formDepartmentCode;
+    try {
+      const schedMatched = usage_date ? await loadScheduleByDate(usage_date) : [];
+      const pred = computePrediction(vendor_name || '', usage_date || '', expenses, schedMatched);
+      if (!pj_no && pred.pj_no) {
+        pj_no = pred.pj_no;
+        pj_name = pred.pj_name || pj_name;
       }
+      if (!client_name && pred.client_name) {
+        client_name = pred.client_name;
+      }
+      if (!expense_item_code && pred.expense_item_code) {
+        expense_item_code = pred.expense_item_code;
+        // 経費項目名も履歴から取得
+        if (!expense_item) {
+          const fromHist = expenses.find(e => e.expense_item_code === pred.expense_item_code && e.expense_item);
+          if (fromHist) expense_item = fromHist.expense_item;
+        }
+      }
+      if (!department_code && pred.department_code) {
+        department_code = pred.department_code;
+      }
+    } catch (e) {
+      console.error('predict at submit failed (non-fatal):', e);
     }
 
     const newFilename = buildSaitoFilename(
@@ -129,6 +144,7 @@ export async function POST(req: NextRequest) {
       id: randomUUID(),
       pj_no,
       pj_name,
+      client_name,
       expense_item,
       expense_item_code,
       vendor_name,

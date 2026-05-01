@@ -25,7 +25,8 @@ export type TaxCategory = '10' | '8' | 'free' | 'out' | null
 export interface ReceiptSaito {
   id: string
   pj_no: string | null
-  pj_name: string | null
+  pj_name: string | null            // PJ件名（スケジュール由来）
+  client_name: string | null        // 客先名/企業名（スケジュール得意先名 由来）
   expense_item: string | null      // 経費項目名
   expense_item_code: string | null // 経費項目コード
   vendor_name: string | null       // 取引先名

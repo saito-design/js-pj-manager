@@ -33,7 +33,7 @@ export async function PUT(
     }
 
     const allowed = [
-      'pj_no', 'pj_name', 'expense_item', 'expense_item_code',
+      'pj_no', 'pj_name', 'client_name', 'expense_item', 'expense_item_code',
       'vendor_name', 'apply_month', 'usage_date',
       'total_amount', 'tax_amount', 'tax_rate', 'tax_category', 'extra_tax_labels',
       'department_code', 'status',

@@ -62,7 +62,9 @@ export default function SaitoManage() {
   const [prediction, setPrediction] = useState<{
     pj_no: string | null
     pj_name: string | null
+    client_name: string | null
     expense_item_code: string | null
+    department_code: string | null
     source: 'schedule' | 'history' | 'both' | 'none'
     confidence: number
     candidates: {
@@ -198,10 +200,16 @@ export default function SaitoManage() {
             next.pj_no = data.pj_no
             next.pj_name = p?.case_name || data.pj_name || null
           }
+          if (!next.client_name && data.client_name) {
+            next.client_name = data.client_name
+          }
           if (!next.expense_item_code && data.expense_item_code) {
             const it = itemsAugmented.find(i => i.code === data.expense_item_code)
             next.expense_item_code = data.expense_item_code
             next.expense_item = it?.name || null
+          }
+          if (!next.department_code && data.department_code) {
+            next.department_code = data.department_code
           }
           return next
         })
@@ -631,11 +639,20 @@ export default function SaitoManage() {
                 <span className="text-gray-600 text-xs">PJ</span>
                 <select value={editing.pj_no || ''} onChange={e => {
                   const p = projectsAugmented.find(pp => pp.pj_no === e.target.value)
-                  setEditing({ ...editing, pj_no: e.target.value || null, pj_name: p?.case_name || null })
+                  setEditing({ ...editing, pj_no: e.target.value || null, pj_name: p?.case_name || null, client_name: p?.client_name || editing.client_name })
                 }} className="w-full px-2 py-1 border rounded">
                   <option value="">未選択</option>
                   {projectsAugmented.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
                 </select>
+              </label>
+              <label className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">企業名（客先）</span>
+                <input
+                  value={editing.client_name || ''}
+                  onChange={e => setEditing({ ...editing, client_name: e.target.value || null })}
+                  placeholder="スケジュール得意先名から自動取得"
+                  className="w-full px-2 py-1 border rounded"
+                />
               </label>
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">経費項目</span>
@@ -727,6 +744,7 @@ export default function SaitoManage() {
                   usage_date: editing.usage_date,
                   pj_no: editing.pj_no,
                   pj_name: editing.pj_name,
+                  client_name: editing.client_name,
                   expense_item: editing.expense_item,
                   expense_item_code: editing.expense_item_code,
                   vendor_name: editing.vendor_name,
