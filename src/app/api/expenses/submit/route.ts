@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
       if (!department_code && pred.department_code) {
         department_code = pred.department_code;
       }
-      if (pred.notes) notes = pred.notes;
+      // notesは伝票ごとに固有なので予測値を反映しない
     } catch (e) {
       console.error('predict at submit failed (non-fatal):', e);
     }

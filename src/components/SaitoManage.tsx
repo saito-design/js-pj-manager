@@ -285,9 +285,7 @@ export default function SaitoManage() {
           if (!next.category && data.category) {
             next.category = data.category
           }
-          if (!next.notes && data.notes) {
-            next.notes = data.notes
-          }
+          // notesは伝票ごとに固有なので自動反映しない
           return next
         })
       })
