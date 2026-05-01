@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 
 type CropArea = { x: number; y: number; width: number; height: number }
 
@@ -164,6 +166,12 @@ export default function SaitoSubmit() {
   const [brightness, setBrightness] = useState(120)
   const [contrast, setContrast] = useState(140)
 
+  // 手動トリミング
+  const [showCropper, setShowCropper] = useState(false)
+  const [crop, setCrop] = useState<Crop>({ unit: '%', x: 0, y: 0, width: 100, height: 100 })
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
+  const cropImgRef = useRef<HTMLImageElement | null>(null)
+
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [extracted, setExtracted] = useState<{
@@ -186,6 +194,9 @@ export default function SaitoSubmit() {
     setRotation(0)
     setBrightness(120)
     setContrast(140)
+    setShowCropper(false)
+    setCrop({ unit: '%', x: 0, y: 0, width: 100, height: 100 })
+    setCompletedCrop(null)
     setSuccess(false)
     setExtracted(null)
     setError('')
@@ -214,8 +225,24 @@ export default function SaitoSubmit() {
     try {
       let outFile = file
       if (file.type.startsWith('image/')) {
-        const needsProc = rotation !== 0 || brightness !== 100 || contrast !== 100
-        if (needsProc) outFile = await processImage(file, null, rotation, brightness, contrast)
+        // 手動クロップが指定されていれば自然サイズに変換して適用
+        let cropArea: CropArea | null = null
+        if (showCropper && completedCrop && cropImgRef.current) {
+          const img = cropImgRef.current
+          const sx = img.naturalWidth / img.width
+          const sy = img.naturalHeight / img.height
+          // 全体に近いなら無視
+          if (completedCrop.width / img.width < 0.99 || completedCrop.height / img.height < 0.99) {
+            cropArea = {
+              x: completedCrop.x * sx,
+              y: completedCrop.y * sy,
+              width: completedCrop.width * sx,
+              height: completedCrop.height * sy,
+            }
+          }
+        }
+        const needsProc = !!cropArea || rotation !== 0 || brightness !== 100 || contrast !== 100
+        if (needsProc) outFile = await processImage(file, cropArea, rotation, brightness, contrast)
       }
       const fd = new FormData()
       fd.append('file', outFile)
@@ -342,17 +369,69 @@ export default function SaitoSubmit() {
               {/* プレビュー */}
               {file.type.startsWith('image/') && preview ? (
                 <>
-                  <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
-                    <img
-                      src={preview}
-                      alt="preview"
-                      className="w-full h-auto block"
-                      style={{
-                        transform: `rotate(${rotation}deg)`,
-                        filter: `brightness(${brightness}%) contrast(${contrast}%)`,
-                      }}
-                    />
-                  </div>
+                  {!showCropper ? (
+                    <div className="space-y-2">
+                      <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                        <img
+                          src={preview}
+                          alt="preview"
+                          className="w-full h-auto block"
+                          style={{
+                            transform: `rotate(${rotation}deg)`,
+                            filter: `brightness(${brightness}%) contrast(${contrast}%)`,
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCrop({ unit: '%', x: 0, y: 0, width: 100, height: 100 })
+                          setCompletedCrop(null)
+                          setShowCropper(true)
+                        }}
+                        className="w-full py-2 border border-amber-300 bg-amber-50 text-amber-700 rounded text-sm hover:bg-amber-100"
+                      >✂ さらにトリミング</button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-500">枠の四隅・辺をドラッグして範囲を決めてください</p>
+                      <div className="bg-gray-900 rounded p-1 flex items-center justify-center">
+                        <ReactCrop
+                          crop={crop}
+                          onChange={c => setCrop(c)}
+                          onComplete={c => setCompletedCrop(c)}
+                          keepSelection
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            ref={cropImgRef}
+                            src={preview}
+                            alt="トリミング対象"
+                            style={{
+                              maxHeight: '60vh', display: 'block',
+                              filter: `brightness(${brightness}%) contrast(${contrast}%)`,
+                            }}
+                            onLoad={e => {
+                              const i = e.currentTarget
+                              setCompletedCrop({ unit: 'px', x: 0, y: 0, width: i.width, height: i.height })
+                            }}
+                          />
+                        </ReactCrop>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setShowCropper(false); setCompletedCrop(null) }}
+                          className="flex-1 py-2 border border-gray-200 rounded text-sm text-gray-600"
+                        >キャンセル</button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCropper(false)}
+                          className="flex-1 py-2 bg-amber-600 text-white rounded text-sm"
+                        >✓ 適用（送信時に反映）</button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 調整UI */}
                   <div className="space-y-3 bg-gray-50 rounded-lg p-3">

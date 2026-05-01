@@ -354,15 +354,21 @@ export default function SaitoManage() {
     if (!editing || !prediction) return
     const next = { ...editing }
     if (prediction.pj_no) {
-      const p = projectsAugmented.find(pp => pp.pj_no === prediction.pj_no)
       next.pj_no = prediction.pj_no
-      next.pj_name = p?.case_name || prediction.pj_name || null
+      // schedule由来の件名を優先（PJ dropdownのkey照合のため）
+      next.pj_name = prediction.pj_name
+        || projectsAugmented.find(pp => pp.pj_no === prediction.pj_no)?.case_name
+        || null
     }
+    if (prediction.client_name) next.client_name = prediction.client_name
     if (prediction.expense_item_code) {
       const it = itemsAugmented.find(i => i.code === prediction.expense_item_code)
       next.expense_item_code = prediction.expense_item_code
       next.expense_item = it?.name || null
     }
+    if (prediction.department_code) next.department_code = prediction.department_code
+    if (prediction.category) next.category = prediction.category
+    if (prediction.notes) next.notes = prediction.notes
     setEditing(next)
   }
 
