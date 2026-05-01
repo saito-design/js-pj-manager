@@ -149,15 +149,42 @@ export default function SaitoManage() {
     if (schedule === null) loadSchedule()
   }, [schedule, loadSchedule])
 
+  // 編集モーダルのPJ dropdown用: 申請年月スケジュールの日付別エントリ
+  // - 件名が「移動・前日入り」のものは除外
+  // - 日付昇順
+  const scheduleEntriesForEdit = useMemo(() => {
+    if (!schedule?.records || !applyFilter) return [] as { key: string; date: string; pj_no: string; client_name: string; subject: string }[]
+    const [fy, fm] = applyFilter.split('-')
+    const fyNum = parseInt(fy, 10)
+    const fmNum = parseInt(fm, 10)
+    const list: { key: string; date: string; pj_no: string; client_name: string; subject: string }[] = []
+    for (const r of schedule.records) {
+      if (!r.PJコード) continue
+      if (parseInt(r.年 || '0', 10) !== fyNum || parseInt(r.月 || '0', 10) !== fmNum) continue
+      const subject = r.件名 || ''
+      if (subject === '移動・前日入り') continue
+      list.push({
+        key: `${r.date}_${r.PJコード}_${subject}`,
+        date: r.date || '',
+        pj_no: r.PJコード,
+        client_name: r.得意先名 || '',
+        subject,
+      })
+    }
+    return list.sort((a, b) => a.date.localeCompare(b.date))
+  }, [schedule, applyFilter])
+
   // 申請年月のスケジュールに含まれるPJ番号一覧（フィルタdropdown用）
   const pjOptionsForFilter = useMemo(() => {
     if (!schedule?.records || !applyFilter) return [] as { pj_no: string; case_name: string; client_name: string }[]
     const [fy, fm] = applyFilter.split('-')
-    const fmNum = String(parseInt(fm, 10))
+    const fyNum = parseInt(fy, 10)
+    const fmNum = parseInt(fm, 10)
     const map = new Map<string, { pj_no: string; case_name: string; client_name: string }>()
     for (const r of schedule.records) {
       if (!r.PJコード) continue
-      if (r.年 !== fy || r.月 !== fmNum) continue
+      // 月は '04' / '4' どちらでも一致するよう数値比較
+      if (parseInt(r.年 || '0', 10) !== fyNum || parseInt(r.月 || '0', 10) !== fmNum) continue
       if (!map.has(r.PJコード)) {
         map.set(r.PJコード, {
           pj_no: r.PJコード,
@@ -250,6 +277,9 @@ export default function SaitoManage() {
           }
           if (!next.department_code && data.department_code) {
             next.department_code = data.department_code
+          }
+          if (!next.category && data.category) {
+            next.category = data.category
           }
           return next
         })
@@ -795,14 +825,38 @@ export default function SaitoManage() {
                 <input type="date" value={editing.usage_date || ''} onChange={e => setEditing({ ...editing, usage_date: e.target.value })} className="w-full px-2 py-1 border rounded" />
               </label>
               <label className="col-span-2 space-y-1">
-                <span className="text-gray-600 text-xs">PJ</span>
-                <select value={editing.pj_no || ''} onChange={e => {
-                  const p = projectsAugmented.find(pp => pp.pj_no === e.target.value)
-                  setEditing({ ...editing, pj_no: e.target.value || null, pj_name: p?.case_name || null, client_name: p?.client_name || editing.client_name })
-                }} className="w-full px-2 py-1 border rounded">
+                <span className="text-gray-600 text-xs">PJ（{applyFilter}のスケジュール／移動・前日入り除く）</span>
+                <select
+                  value={editing.pj_no && editing.usage_date ? `${editing.usage_date}_${editing.pj_no}_${editing.pj_name || ''}` : ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    if (!v) {
+                      setEditing({ ...editing, pj_no: null, pj_name: null })
+                      return
+                    }
+                    const sel = scheduleEntriesForEdit.find(s => s.key === v)
+                    if (sel) {
+                      setEditing({
+                        ...editing,
+                        pj_no: sel.pj_no,
+                        pj_name: sel.subject || null,
+                        client_name: sel.client_name || editing.client_name,
+                        usage_date: sel.date || editing.usage_date,
+                      })
+                    }
+                  }}
+                  className="w-full px-2 py-1 border rounded font-mono text-xs"
+                >
                   <option value="">未選択</option>
-                  {projectsAugmented.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
+                  {scheduleEntriesForEdit.map(s => (
+                    <option key={s.key} value={s.key}>
+                      {s.date} {s.pj_no} {s.client_name} {s.subject}
+                    </option>
+                  ))}
                 </select>
+                {scheduleEntriesForEdit.length === 0 && (
+                  <p className="text-[11px] text-gray-400">{applyFilter}のスケジュールが見つかりません</p>
+                )}
               </label>
               <label className="col-span-2 space-y-1">
                 <span className="text-gray-600 text-xs">企業名（客先）</span>

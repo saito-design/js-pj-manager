@@ -25,7 +25,8 @@ function parseBudgetFilename(filename: string): { pj_no: string; client_name: st
   const trimmed = noExt.replace(/[\s_　]*予算書\s*$/, '');
   const parts = trimmed.split('_');
   if (parts.length < 3) return null;
-  const pj_no = parts[0];
+  // ハイフンを除去してスケジュール/履歴フォーマット（01260438）に統一
+  const pj_no = parts[0].replace(/-/g, '');
   const client_name = parts[1];
   const case_name = parts.slice(2).join('_').replace(/^\s+|\s+$/g, '');
   return { pj_no, client_name, case_name };

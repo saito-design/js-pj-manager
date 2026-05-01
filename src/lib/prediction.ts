@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
+import { guessCategory } from '@/lib/category';
 import type { ReceiptSaito } from '@/types';
 
 export interface PredictResult {
@@ -8,6 +9,7 @@ export interface PredictResult {
   client_name: string | null;
   expense_item_code: string | null;
   department_code: string | null;
+  category: string | null;
   source: 'schedule' | 'history' | 'both' | 'none';
   confidence: number;
   candidates: {
@@ -65,7 +67,7 @@ export function computePrediction(
 ): PredictResult {
   const empty: PredictResult = {
     pj_no: null, pj_name: null, client_name: null, expense_item_code: null,
-    department_code: null,
+    department_code: null, category: null,
     source: 'none', confidence: 0,
     candidates: { schedule: [], history: [] },
   };
@@ -166,9 +168,19 @@ export function computePrediction(
     else if (ctx.tax_rate === 0.08) expense_item_code = '5331';
   }
 
-  if (!pj_no && !expense_item_code && !department_code && !client_name) return empty;
+  // 分類予測:
+  // 1) 同 vendor 履歴の最頻カテゴリ
+  // 2) vendor キーワードからルールベース推定
+  const catCount = new Map<string, number>();
+  for (const m of historyMatched) {
+    if (m.category) catCount.set(m.category, (catCount.get(m.category) || 0) + 1);
+  }
+  let category: string | null = topKey(catCount);
+  if (!category && vendor) category = guessCategory(vendor);
+
+  if (!pj_no && !expense_item_code && !department_code && !client_name && !category) return empty;
   return {
-    pj_no, pj_name, client_name, expense_item_code, department_code,
+    pj_no, pj_name, client_name, expense_item_code, department_code, category,
     source, confidence,
     candidates: {
       schedule: scheduleCandidates,
