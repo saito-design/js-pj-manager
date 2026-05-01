@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import Cropper, { Area } from 'react-easy-crop'
 
 function getCurrentApplyMonth() {
   const d = new Date()
@@ -24,9 +25,10 @@ function Row({ label, value }: { label: string; value: string | null | undefined
   )
 }
 
-// 画像をcanvasで回転・明るさ・コントラスト適用してBlob化
+// 画像をクロップ＋回転＋フィルタ適用してJPEG Fileを生成
 async function processImage(
   file: File,
+  cropArea: Area | null,
   rotation: number,
   brightness: number,
   contrast: number,
@@ -37,15 +39,24 @@ async function processImage(
     i.onerror = reject
     i.src = URL.createObjectURL(file)
   })
-  const canvas = document.createElement('canvas')
+
+  // クロップ領域（指定なしなら画像全体）
+  const sx = cropArea?.x ?? 0
+  const sy = cropArea?.y ?? 0
+  const sw = cropArea?.width ?? img.width
+  const sh = cropArea?.height ?? img.height
+
+  // 回転後の出力キャンバス
   const swap = rotation === 90 || rotation === 270
-  canvas.width = swap ? img.height : img.width
-  canvas.height = swap ? img.width : img.height
+  const canvas = document.createElement('canvas')
+  canvas.width = swap ? sh : sw
+  canvas.height = swap ? sw : sh
   const ctx = canvas.getContext('2d')!
   ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`
   ctx.translate(canvas.width / 2, canvas.height / 2)
   ctx.rotate((rotation * Math.PI) / 180)
-  ctx.drawImage(img, -img.width / 2, -img.height / 2)
+  ctx.drawImage(img, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh)
+
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/jpeg', 0.9)
   })
@@ -56,9 +67,15 @@ export default function SaitoSubmit() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [applyMonth, setApplyMonth] = useState(getCurrentApplyMonth())
+
+  // 画像加工
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [rotation, setRotation] = useState(0)
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
+
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [extracted, setExtracted] = useState<{
@@ -76,10 +93,17 @@ export default function SaitoSubmit() {
     return () => { if (preview) URL.revokeObjectURL(preview) }
   }, [preview])
 
+  const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
+    setCroppedAreaPixels(areaPixels)
+  }, [])
+
   const handleFile = (f: File | null) => {
     if (preview) URL.revokeObjectURL(preview)
     setFile(f)
     setPreview(f ? URL.createObjectURL(f) : null)
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+    setCroppedAreaPixels(null)
     setRotation(0)
     setBrightness(100)
     setContrast(100)
@@ -92,10 +116,10 @@ export default function SaitoSubmit() {
     if (!file) return setError('レシートを撮影または選択してください')
     setSubmitting(true); setError(''); setSuccess(false)
     try {
-      // 画像なら調整を適用、PDFはそのまま
       let outFile = file
-      if (file.type.startsWith('image/') && (rotation !== 0 || brightness !== 100 || contrast !== 100)) {
-        outFile = await processImage(file, rotation, brightness, contrast)
+      if (file.type.startsWith('image/')) {
+        const needsProc = !!croppedAreaPixels || rotation !== 0 || brightness !== 100 || contrast !== 100
+        if (needsProc) outFile = await processImage(file, croppedAreaPixels, rotation, brightness, contrast)
       }
       const fd = new FormData()
       fd.append('file', outFile)
@@ -130,8 +154,6 @@ export default function SaitoSubmit() {
       fileInputRef.current.click()
     }
   }
-
-  const cssFilter = `brightness(${brightness}%) contrast(${contrast}%)`
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -221,83 +243,106 @@ export default function SaitoSubmit() {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* プレビュー */}
+              {/* プレビュー＋クロップ */}
               {file.type.startsWith('image/') && preview ? (
-                <div className="bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center" style={{ minHeight: '300px' }}>
-                  <img
-                    src={preview}
-                    alt="preview"
-                    className="max-w-full max-h-[60vh] object-contain transition-transform"
-                    style={{
-                      transform: `rotate(${rotation}deg)`,
-                      filter: cssFilter,
-                    }}
-                  />
-                </div>
+                <>
+                  <div className="relative bg-black rounded-lg overflow-hidden" style={{ height: '60vh', minHeight: '300px' }}>
+                    <Cropper
+                      image={preview}
+                      crop={crop}
+                      zoom={zoom}
+                      rotation={rotation}
+                      aspect={undefined}
+                      onCropChange={setCrop}
+                      onZoomChange={setZoom}
+                      onRotationChange={setRotation}
+                      onCropComplete={onCropComplete}
+                      restrictPosition={false}
+                      style={{ mediaStyle: { filter: `brightness(${brightness}%) contrast(${contrast}%)` } }}
+                    />
+                  </div>
+
+                  {/* 調整UI */}
+                  <div className="space-y-3 bg-gray-50 rounded-lg p-3">
+                    {/* 拡大 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-12">拡大</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={0.05}
+                        value={zoom}
+                        onChange={e => setZoom(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs font-mono text-gray-500 w-10 text-right">{zoom.toFixed(1)}x</span>
+                    </div>
+
+                    {/* 回転 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-12">回転</span>
+                      <button
+                        type="button"
+                        onClick={() => setRotation((r) => (r + 270) % 360)}
+                        className="flex-1 py-1.5 border border-gray-200 bg-white rounded text-sm hover:bg-gray-100"
+                      >↺ 左90°</button>
+                      <button
+                        type="button"
+                        onClick={() => setRotation((r) => (r + 90) % 360)}
+                        className="flex-1 py-1.5 border border-gray-200 bg-white rounded text-sm hover:bg-gray-100"
+                      >↻ 右90°</button>
+                    </div>
+
+                    {/* 明るさ */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-12">明るさ</span>
+                      <input
+                        type="range"
+                        min={50}
+                        max={200}
+                        value={brightness}
+                        onChange={e => setBrightness(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs font-mono text-gray-500 w-10 text-right">{brightness}%</span>
+                    </div>
+
+                    {/* コントラスト */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-12">くっきり</span>
+                      <input
+                        type="range"
+                        min={50}
+                        max={200}
+                        value={contrast}
+                        onChange={e => setContrast(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs font-mono text-gray-500 w-10 text-right">{contrast}%</span>
+                    </div>
+
+                    {/* リセット */}
+                    {(zoom !== 1 || rotation !== 0 || brightness !== 100 || contrast !== 100) && (
+                      <button
+                        type="button"
+                        onClick={() => { setZoom(1); setRotation(0); setBrightness(100); setContrast(100); setCrop({ x: 0, y: 0 }) }}
+                        className="text-xs text-gray-500 hover:text-gray-800"
+                      >調整をリセット</button>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-gray-400">
+                    ピンチ／ドラッグでトリミング。範囲外も指定可能です。
+                  </p>
+                </>
               ) : (
                 <div className="bg-gray-100 px-3 py-3 rounded-lg text-sm text-gray-600 flex items-center gap-2">
                   <span>📄</span> {file.name}
                 </div>
               )}
 
-              {/* 調整UI（画像のみ） */}
-              {file.type.startsWith('image/') && (
-                <div className="space-y-3 bg-gray-50 rounded-lg p-3">
-                  {/* 回転 */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-12">回転</span>
-                    <button
-                      type="button"
-                      onClick={() => setRotation((rotation + 270) % 360)}
-                      className="flex-1 py-1.5 border border-gray-200 bg-white rounded text-sm hover:bg-gray-100"
-                    >↺ 左90°</button>
-                    <button
-                      type="button"
-                      onClick={() => setRotation((rotation + 90) % 360)}
-                      className="flex-1 py-1.5 border border-gray-200 bg-white rounded text-sm hover:bg-gray-100"
-                    >↻ 右90°</button>
-                  </div>
-
-                  {/* 明るさ */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-12">明るさ</span>
-                    <input
-                      type="range"
-                      min={50}
-                      max={200}
-                      value={brightness}
-                      onChange={e => setBrightness(Number(e.target.value))}
-                      className="flex-1"
-                    />
-                    <span className="text-xs font-mono text-gray-500 w-10 text-right">{brightness}%</span>
-                  </div>
-
-                  {/* コントラスト */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-12">くっきり</span>
-                    <input
-                      type="range"
-                      min={50}
-                      max={200}
-                      value={contrast}
-                      onChange={e => setContrast(Number(e.target.value))}
-                      className="flex-1"
-                    />
-                    <span className="text-xs font-mono text-gray-500 w-10 text-right">{contrast}%</span>
-                  </div>
-
-                  {/* リセット */}
-                  {(rotation !== 0 || brightness !== 100 || contrast !== 100) && (
-                    <button
-                      type="button"
-                      onClick={() => { setRotation(0); setBrightness(100); setContrast(100) }}
-                      className="text-xs text-gray-500 hover:text-gray-800"
-                    >調整をリセット</button>
-                  )}
-                </div>
-              )}
-
-              {/* 撮り直し */}
+              {/* 撮り直し／削除 */}
               <div className="flex gap-2">
                 <button
                   type="button"

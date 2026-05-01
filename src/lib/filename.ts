@@ -9,6 +9,7 @@ export interface FilenameInput {
   expense_item: string | null
   vendor_name: string | null
   usage_date: string | null    // 'YYYY-MM-DD'
+  extra_tax_labels?: string[]  // 例: ['入湯税', '宿泊税']
 }
 
 export function sanitize(s: string | null | undefined, maxLen = 30): string {
@@ -25,7 +26,12 @@ export function buildSaitoFilename(input: FilenameInput, originalFilename: strin
   const item = sanitize(input.expense_item, 12);
   const vendor = sanitize(input.vendor_name, 20);
   const usage = sanitize(input.usage_date, 10);
-  return `${apply}_${pj}_${item}_${vendor}_${usage}${ext}`;
+  const extras = (input.extra_tax_labels || [])
+    .filter(Boolean)
+    .map(l => sanitize(l, 8))
+    .join('_');
+  const tail = extras ? `_${extras}` : '';
+  return `${apply}_${pj}_${item}_${vendor}_${usage}${tail}${ext}`;
 }
 
 export function getCurrentApplyMonth(): string {

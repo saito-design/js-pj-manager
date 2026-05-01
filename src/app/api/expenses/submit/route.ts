@@ -77,9 +77,12 @@ export async function POST(req: NextRequest) {
     const usage_date = extracted?.date || null;
     const total_amount = extracted?.total_amount ?? null;
     const tax_amount = extracted?.tax_amount ?? null;
+    const tax_rate = extracted?.tax_rate ?? null;
+    const tax_category: '10' | '8' | null =
+      tax_rate === 0.10 ? '10' : tax_rate === 0.08 ? '8' : null;
 
     const newFilename = buildSaitoFilename(
-      { apply_month, pj_no, expense_item, vendor_name, usage_date },
+      { apply_month, pj_no, expense_item, vendor_name, usage_date, extra_tax_labels: [] },
       origName,
     );
 
@@ -101,6 +104,9 @@ export async function POST(req: NextRequest) {
       usage_date,
       total_amount,
       tax_amount,
+      tax_rate,
+      tax_category,
+      extra_tax_labels: [],
       department_code,
       source_file: newFilename,
       source_file_id: tempId,

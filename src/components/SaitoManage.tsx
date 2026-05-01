@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import QRCode from 'qrcode'
-import type { ReceiptSaito, Project, ExpenseItem, Department } from '@/types'
+import type { ReceiptSaito, Project, ExpenseItem, Department, TaxCategory } from '@/types'
 
 interface ScheduleRecord {
   入力: string; PJコード: string; 得意先名: string
@@ -93,6 +93,7 @@ export default function SaitoManage() {
 
   // 経費項目管理用
   const [showItemMgmt, setShowItemMgmt] = useState(false)
+  const [showQr, setShowQr] = useState(false)
   const [newCode, setNewCode] = useState('')
   const [newName, setNewName] = useState('')
   const [newCategory, setNewCategory] = useState('')
@@ -124,22 +125,42 @@ export default function SaitoManage() {
 
   useEffect(() => { load() }, [load])
 
-  // 編集モーダル開いたら予測APIを呼ぶ
+  // 編集モーダル開いたら予測APIを呼んで未入力項目に自動適用
   useEffect(() => {
     if (!editing) { setPrediction(null); return }
     const vendor = editing.vendor_name || ''
     const usage = editing.usage_date || ''
     if (!vendor && !usage) { setPrediction(null); return }
+    const editingId = editing.id
     setPredicting(true)
     const params = new URLSearchParams()
     if (vendor) params.set('vendor_name', vendor)
     if (usage) params.set('usage_date', usage)
     fetch(`/api/expenses/predict?${params}`)
       .then(r => r.json())
-      .then(data => setPrediction(data && data.source ? data : null))
+      .then(data => {
+        if (!data || !data.source || data.source === 'none') { setPrediction(null); return }
+        setPrediction(data)
+        // 未入力の項目だけデフォルト反映（既に手入力済みなら上書きしない）
+        setEditing(prev => {
+          if (!prev || prev.id !== editingId) return prev
+          const next = { ...prev }
+          if (!next.pj_no && data.pj_no) {
+            const p = projects.find(pp => pp.pj_no === data.pj_no)
+            next.pj_no = data.pj_no
+            next.pj_name = p?.case_name || data.pj_name || null
+          }
+          if (!next.expense_item_code && data.expense_item_code) {
+            const it = items.find(i => i.code === data.expense_item_code)
+            next.expense_item_code = data.expense_item_code
+            next.expense_item = it?.name || null
+          }
+          return next
+        })
+      })
       .catch(() => setPrediction(null))
       .finally(() => setPredicting(false))
-  }, [editing?.id, editing?.vendor_name, editing?.usage_date])
+  }, [editing?.id, editing?.vendor_name, editing?.usage_date, projects, items])
 
   const applyPrediction = () => {
     if (!editing || !prediction) return
@@ -243,14 +264,24 @@ export default function SaitoManage() {
         </span>
       </section>
 
-      {/* QR */}
-      <section className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-6">
-        <div>
-          <h2 className="text-sm font-bold text-gray-700 mb-1">写真投稿用QRコード</h2>
-          <p className="text-xs text-gray-500 mb-2">スマホで読み取って、レシート写真を投稿できます</p>
-          <p className="text-xs text-blue-600 break-all">{submitUrl}</p>
-        </div>
-        {qrSrc && <img src={qrSrc} alt="QR" className="w-32 h-32 ml-auto" />}
+      {/* QR（折りたたみ） */}
+      <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setShowQr(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50"
+        >
+          <span>📱 写真投稿用QRコード</span>
+          <span className="text-gray-400 text-xs">{showQr ? '▲ 閉じる' : '▼ 開く'}</span>
+        </button>
+        {showQr && (
+          <div className="border-t border-gray-100 p-5 flex items-center gap-6">
+            <div>
+              <p className="text-xs text-gray-500 mb-2">スマホで読み取って、レシート写真を投稿できます</p>
+              <p className="text-xs text-blue-600 break-all">{submitUrl}</p>
+            </div>
+            {qrSrc && <img src={qrSrc} alt="QR" className="w-32 h-32 ml-auto" />}
+          </div>
+        )}
       </section>
 
       {/* 経費項目管理 */}
@@ -495,9 +526,55 @@ export default function SaitoManage() {
                 <input value={editing.vendor_name || ''} onChange={e => setEditing({ ...editing, vendor_name: e.target.value })} className="w-full px-2 py-1 border rounded" />
               </label>
               <label className="space-y-1">
-                <span className="text-gray-600 text-xs">金額</span>
+                <span className="text-gray-600 text-xs">金額（税込）</span>
                 <input type="number" value={editing.total_amount ?? ''} onChange={e => setEditing({ ...editing, total_amount: e.target.value === '' ? null : Number(e.target.value) })} className="w-full px-2 py-1 border rounded" />
               </label>
+              <label className="space-y-1">
+                <span className="text-gray-600 text-xs">消費税額</span>
+                <input type="number" value={editing.tax_amount ?? ''} onChange={e => setEditing({ ...editing, tax_amount: e.target.value === '' ? null : Number(e.target.value) })} className="w-full px-2 py-1 border rounded" />
+              </label>
+              <label className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">税区分</span>
+                <select
+                  value={editing.tax_category ?? ''}
+                  onChange={e => {
+                    const cat = (e.target.value || null) as TaxCategory
+                    const rate = cat === '10' ? 0.10 : cat === '8' ? 0.08 : cat === 'free' || cat === 'out' ? 0 : null
+                    setEditing({ ...editing, tax_category: cat, tax_rate: rate })
+                  }}
+                  className="w-full px-2 py-1 border rounded"
+                >
+                  <option value="">未設定</option>
+                  <option value="10">標準 10%</option>
+                  <option value="8">軽減 8%</option>
+                  <option value="free">非課税</option>
+                  <option value="out">不課税</option>
+                </select>
+              </label>
+              <div className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">追加税種別（ファイル名末尾に付与）</span>
+                <div className="flex gap-3 text-sm">
+                  {['入湯税', '宿泊税'].map(label => {
+                    const checked = (editing.extra_tax_labels || []).includes(label)
+                    return (
+                      <label key={label} className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => {
+                            const cur = editing.extra_tax_labels || []
+                            const next = e.target.checked
+                              ? [...cur.filter(l => l !== label), label]
+                              : cur.filter(l => l !== label)
+                            setEditing({ ...editing, extra_tax_labels: next })
+                          }}
+                        />
+                        {label}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">状態</span>
                 <select value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value as 'pending' | 'confirmed' })} className="w-full px-2 py-1 border rounded">
@@ -521,6 +598,10 @@ export default function SaitoManage() {
                   expense_item_code: editing.expense_item_code,
                   vendor_name: editing.vendor_name,
                   total_amount: editing.total_amount,
+                  tax_amount: editing.tax_amount,
+                  tax_rate: editing.tax_rate,
+                  tax_category: editing.tax_category,
+                  extra_tax_labels: editing.extra_tax_labels || [],
                   department_code: editing.department_code,
                   status: editing.status,
                 })

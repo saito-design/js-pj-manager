@@ -35,7 +35,7 @@ export async function PUT(
     const allowed = [
       'pj_no', 'pj_name', 'expense_item', 'expense_item_code',
       'vendor_name', 'apply_month', 'usage_date',
-      'total_amount', 'tax_amount',
+      'total_amount', 'tax_amount', 'tax_rate', 'tax_category', 'extra_tax_labels',
       'department_code', 'status',
     ] as const;
     const before = { ...expenses[idx] };
@@ -45,12 +45,12 @@ export async function PUT(
     expenses[idx].updated_at = new Date().toISOString();
 
     const e = expenses[idx];
-    const nameKeys: (keyof ReceiptSaito)[] = ['apply_month', 'pj_no', 'expense_item', 'vendor_name', 'usage_date'];
-    const changed = nameKeys.some(k => before[k] !== e[k]);
+    const nameKeys: (keyof ReceiptSaito)[] = ['apply_month', 'pj_no', 'expense_item', 'vendor_name', 'usage_date', 'extra_tax_labels'];
+    const changed = nameKeys.some(k => JSON.stringify(before[k]) !== JSON.stringify(e[k]));
     if (changed && e.source_file_id && e.source_file) {
       try {
         const newName = buildSaitoFilename(
-          { apply_month: e.apply_month, pj_no: e.pj_no, expense_item: e.expense_item, vendor_name: e.vendor_name, usage_date: e.usage_date },
+          { apply_month: e.apply_month, pj_no: e.pj_no, expense_item: e.expense_item, vendor_name: e.vendor_name, usage_date: e.usage_date, extra_tax_labels: e.extra_tax_labels || [] },
           e.source_file,
         );
         await renameFile(e.source_file_id, newName);

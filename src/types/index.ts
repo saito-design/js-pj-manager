@@ -19,6 +19,9 @@ export interface Department {
   name: string
 }
 
+// 税区分: '10'=10%, '8'=軽減8%, 'free'=非課税, 'out'=不課税, null=未設定
+export type TaxCategory = '10' | '8' | 'free' | 'out' | null
+
 export interface ReceiptSaito {
   id: string
   pj_no: string | null
@@ -30,6 +33,9 @@ export interface ReceiptSaito {
   usage_date: string | null        // 'YYYY-MM-DD'
   total_amount: number | null
   tax_amount: number | null
+  tax_rate: number | null          // 0.10 / 0.08 / 0 / null
+  tax_category: TaxCategory        // '10' | '8' | 'free' | 'out' | null
+  extra_tax_labels: string[]       // 例: ['入湯税', '宿泊税']。ファイル名末尾に付与
   department_code: string | null   // 5101 etc.
   source_file: string | null       // Drive上のファイル名
   source_file_id: string | null    // Drive file ID
