@@ -168,8 +168,8 @@ export default function SaitoSubmit() {
 
   // 画像加工
   const [rotation, setRotation] = useState(0)
-  const [brightness, setBrightness] = useState(100)
-  const [contrast, setContrast] = useState(100)
+  const [brightness, setBrightness] = useState(130)
+  const [contrast, setContrast] = useState(140)
 
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -191,8 +191,8 @@ export default function SaitoSubmit() {
   const handleFile = async (f: File | null) => {
     if (preview) URL.revokeObjectURL(preview)
     setRotation(0)
-    setBrightness(100)
-    setContrast(100)
+    setBrightness(130)
+    setContrast(140)
     setSuccess(false)
     setExtracted(null)
     setError('')
@@ -406,7 +406,7 @@ export default function SaitoSubmit() {
                     {(rotation !== 0 || brightness !== 100 || contrast !== 100) && (
                       <button
                         type="button"
-                        onClick={() => { setRotation(0); setBrightness(100); setContrast(100) }}
+                        onClick={() => { setRotation(0); setBrightness(130); setContrast(140) }}
                         className="text-xs text-gray-500 hover:text-gray-800"
                       >調整をリセット</button>
                     )}
