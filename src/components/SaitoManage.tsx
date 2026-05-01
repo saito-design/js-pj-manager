@@ -306,6 +306,18 @@ export default function SaitoManage() {
 
   const totalAmount = useMemo(() => expenses.reduce((s, e) => s + (e.total_amount ?? 0), 0), [expenses])
 
+  // 利用日の新しい順にソート（null/undefinedは最後）
+  const expensesSorted = useMemo(() => {
+    return [...expenses].sort((a, b) => {
+      const ad = a.usage_date || ''
+      const bd = b.usage_date || ''
+      if (!ad && !bd) return 0
+      if (!ad) return 1
+      if (!bd) return -1
+      return bd.localeCompare(ad)
+    })
+  }, [expenses])
+
   // PJ一覧: マスタ（予算書）に履歴から見つかったものを追加
   const projectsAugmented = useMemo(() => {
     const map = new Map<string, Project>()
@@ -607,7 +619,7 @@ export default function SaitoManage() {
                 </tr>
               </thead>
               <tbody>
-                {expenses.map(e => (
+                {expensesSorted.map(e => (
                   <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-2 py-2">{e.usage_date || '-'}</td>
                     <td className="px-2 py-2">{e.vendor_name || '-'}</td>
