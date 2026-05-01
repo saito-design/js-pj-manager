@@ -111,6 +111,7 @@ export default function SaitoManage() {
   const [crop, setCrop] = useState<Crop>({ unit: '%', x: 5, y: 5, width: 90, height: 90 })
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null)
   const [savingFile, setSavingFile] = useState(false)
+  const [savingExpense, setSavingExpense] = useState(false)
   const cropImgRef = useRef<HTMLImageElement | null>(null)
 
   // PCからのアップロード（state/refのみ。実装はload定義後）
@@ -326,8 +327,15 @@ export default function SaitoManage() {
       const res = await fetch(`/api/expenses/${editing.id}/file`, { method: 'PUT', body: fd })
       if (!res.ok) throw new Error('差し替え失敗')
       const updated = await res.json()
+      // 一覧の該当エントリは差し替え結果で更新
       setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e))
-      setEditing(updated)
+      // 編集中のフォーム値（保存前）は保持し、ファイル関連だけ反映
+      setEditing(prev => prev ? {
+        ...prev,
+        source_file_id: updated.source_file_id,
+        source_file: updated.source_file,
+        updated_at: updated.updated_at,
+      } : null)
       setShowCropper(false)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'トリミング失敗')
@@ -638,13 +646,6 @@ export default function SaitoManage() {
           <span className="text-gray-600">申請年月</span>
           <MonthStepper value={applyFilter} onChange={setApplyFilter} />
         </label>
-        <label className="flex items-center gap-2">
-          <span className="text-gray-600">PJ</span>
-          <select value={pjFilter} onChange={e => setPjFilter(e.target.value)} className="px-2 py-1 border rounded min-w-[200px]">
-            <option value="">すべて</option>
-            {pjOptionsForFilter.map(p => <option key={p.pj_no} value={p.pj_no}>{p.pj_no} {p.case_name}</option>)}
-          </select>
-        </label>
         <div className="ml-auto text-xs text-gray-500">
           合計 ¥{totalAmount.toLocaleString()} / {expenses.length}件
         </div>
@@ -801,14 +802,29 @@ export default function SaitoManage() {
                   </div>
                 )}
                 {prediction.candidates.schedule.length > 1 && (
-                  <details className="text-gray-500">
-                    <summary className="cursor-pointer">同日他のスケジュール候補（{prediction.candidates.schedule.length}件）</summary>
-                    <ul className="pl-3 pt-1 space-y-0.5">
-                      {prediction.candidates.schedule.slice(0, 5).map(s => (
-                        <li key={s.pj_no}>
-                          <span className="font-mono">{s.pj_no}</span> {s.client_name} {s.subject && `／ ${s.subject}`}
-                        </li>
-                      ))}
+                  <details className="text-gray-500" open>
+                    <summary className="cursor-pointer">同日他のスケジュール候補（{prediction.candidates.schedule.length}件・クリックで適用）</summary>
+                    <ul className="pl-3 pt-1 space-y-1">
+                      {prediction.candidates.schedule.slice(0, 10).map(s => {
+                        const selected = editing.pj_no === s.pj_no
+                        return (
+                          <li key={s.pj_no}>
+                            <button
+                              type="button"
+                              onClick={() => setEditing({
+                                ...editing,
+                                pj_no: s.pj_no,
+                                pj_name: s.subject || null,
+                                client_name: s.client_name || editing.client_name,
+                              })}
+                              className={`text-left px-2 py-1 rounded text-xs hover:bg-amber-100 w-full ${selected ? 'bg-amber-200 font-medium' : 'bg-white'}`}
+                            >
+                              <span className="font-mono">{s.pj_no}</span> {s.client_name} {s.subject && `／ ${s.subject}`}
+                              {selected && <span className="ml-1 text-amber-700">✓</span>}
+                            </button>
+                          </li>
+                        )
+                      })}
                     </ul>
                   </details>
                 )}
@@ -867,19 +883,26 @@ export default function SaitoManage() {
                   className="w-full px-2 py-1 border rounded"
                 />
               </label>
-              <label className="col-span-2 space-y-1">
-                <span className="text-gray-600 text-xs">分類（ファイル名用）</span>
-                <input
-                  list="category-list"
-                  value={editing.category || ''}
-                  onChange={e => setEditing({ ...editing, category: e.target.value || null })}
-                  placeholder="タクシー代 / 宿泊代 / 新幹線代 など"
-                  className="w-full px-2 py-1 border rounded"
-                />
-                <datalist id="category-list">
-                  {CATEGORIES.map(c => <option key={c} value={c} />)}
-                </datalist>
-              </label>
+              <div className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">分類（ファイル名用）{editing.category && <span className="ml-2 text-amber-700">選択中: {editing.category}</span>}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIES.map(c => {
+                    const selected = editing.category === c
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setEditing({ ...editing, category: selected ? null : c })}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                          selected
+                            ? 'bg-amber-500 text-white border-amber-500'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >{c}</button>
+                    )
+                  })}
+                </div>
+              </div>
               <label className="space-y-1">
                 <span className="text-gray-600 text-xs">経費項目（楽々精算）</span>
                 <select value={editing.expense_item_code || ''} onChange={e => {
@@ -960,41 +983,97 @@ export default function SaitoManage() {
                   })}
                 </div>
               </div>
-              <label className="space-y-1">
+              <div className="col-span-2 space-y-1">
                 <span className="text-gray-600 text-xs">状態</span>
-                <select value={editing.status} onChange={e => setEditing({ ...editing, status: e.target.value as 'pending' | 'confirmed' })} className="w-full px-2 py-1 border rounded">
-                  <option value="pending">未確定</option>
-                  <option value="confirmed">確定</option>
-                </select>
-              </label>
+                <div className="flex gap-2">
+                  {([['pending', '未確定', 'bg-yellow-500'], ['confirmed', '確定', 'bg-green-600']] as const).map(([val, label, color]) => {
+                    const selected = editing.status === val
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setEditing({ ...editing, status: val })}
+                        className={`flex-1 px-3 py-1.5 rounded text-sm border transition-colors ${
+                          selected ? `${color} text-white border-transparent` : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >{selected && '✓ '}{label}</button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
             <div className="text-[10px] text-gray-400">
               ファイル: {editing.source_file || '-'}
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">キャンセル</button>
-              <button onClick={async () => {
-                await updateExpense(editing.id, {
-                  apply_month: editing.apply_month,
-                  usage_date: editing.usage_date,
-                  pj_no: editing.pj_no,
-                  pj_name: editing.pj_name,
-                  client_name: editing.client_name,
-                  category: editing.category,
-                  expense_item: editing.expense_item,
-                  expense_item_code: editing.expense_item_code,
-                  vendor_name: editing.vendor_name,
-                  invoice_no: editing.invoice_no,
-                  total_amount: editing.total_amount,
-                  tax_amount: editing.tax_amount,
-                  tax_rate: editing.tax_rate,
-                  tax_category: editing.tax_category,
-                  extra_tax_labels: editing.extra_tax_labels || [],
-                  department_code: editing.department_code,
-                  status: editing.status,
+              {(() => {
+                // トリミング画面が開いていて、かつ範囲が画像全体でない場合のみ画像差し替え
+                const shouldApplyCrop = (): boolean => {
+                  if (!showCropper || !completedCrop || !cropImgRef.current) return false
+                  const img = cropImgRef.current
+                  const w = completedCrop.width
+                  const h = completedCrop.height
+                  // 表示サイズに対して99%以上ならトリミング不要とみなす
+                  return w / img.width < 0.99 || h / img.height < 0.99
+                }
+                const buildPatch = (e: ReceiptSaito) => ({
+                  apply_month: e.apply_month,
+                  usage_date: e.usage_date,
+                  pj_no: e.pj_no,
+                  pj_name: e.pj_name,
+                  client_name: e.client_name,
+                  category: e.category,
+                  expense_item: e.expense_item,
+                  expense_item_code: e.expense_item_code,
+                  vendor_name: e.vendor_name,
+                  invoice_no: e.invoice_no,
+                  total_amount: e.total_amount,
+                  tax_amount: e.tax_amount,
+                  tax_rate: e.tax_rate,
+                  tax_category: e.tax_category,
+                  extra_tax_labels: e.extra_tax_labels || [],
+                  department_code: e.department_code,
+                  status: e.status,
                 })
-                setEditing(null)
-              }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">保存</button>
+                return (
+                  <>
+                    <button
+                      disabled={savingExpense || savingFile}
+                      onClick={async () => {
+                        setSavingExpense(true)
+                        try {
+                          if (shouldApplyCrop()) await saveCroppedImage()
+                          await updateExpense(editing.id, buildPatch(editing))
+                          const idx = expensesSorted.findIndex(x => x.id === editing.id)
+                          const after = expensesSorted.slice(idx + 1).find(x => x.status === 'pending')
+                          const before = expensesSorted.slice(0, idx).find(x => x.status === 'pending')
+                          const next = after || before || null
+                          if (next) setEditing(next)
+                          else setEditing(null)
+                        } finally {
+                          setSavingExpense(false)
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:opacity-60"
+                    >{savingExpense ? '保存中...' : '保存して次'}</button>
+                    <button
+                      disabled={savingExpense || savingFile}
+                      onClick={async () => {
+                        setSavingExpense(true)
+                        try {
+                          if (shouldApplyCrop()) await saveCroppedImage()
+                          await updateExpense(editing.id, buildPatch(editing))
+                          setEditing(null)
+                        } finally {
+                          setSavingExpense(false)
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-60"
+                    >{savingExpense ? '保存中...' : '保存して閉じる'}</button>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>

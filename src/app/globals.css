@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+/* ReactCrop の枠スタイル強化（線太く・角を色付き四角に） */
+.ReactCrop__crop-selection {
+  border: 3px solid #f59e0b !important;
+  box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5) !important;
+}
+.ReactCrop__drag-handle::after {
+  width: 14px !important;
+  height: 14px !important;
+  border: 2px solid #f59e0b !important;
+  background-color: #fbbf24 !important;
+  border-radius: 2px !important;
+  opacity: 1 !important;
+}
