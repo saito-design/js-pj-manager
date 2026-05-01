@@ -45,17 +45,83 @@ async function loadImage(file: File): Promise<{ width: number; height: number; s
   return { width: img.naturalWidth, height: img.naturalHeight, source: img }
 }
 
-// EXIF 補正済の画像を Blob URL として返す（プレビュー/Cropper 用）
+// 背景色（四隅サンプル平均）と異なるピクセルの bbox を検出
+function detectContentBox(imgData: ImageData, threshold = 60, padding = 8): { x: number; y: number; w: number; h: number } | null {
+  const { data, width, height } = imgData
+  const sample = 30
+  let br = 0, bg = 0, bb = 0, n = 0
+  const corners: [number, number][] = [
+    [0, 0], [width - sample, 0], [0, height - sample], [width - sample, height - sample],
+  ]
+  for (const [cx, cy] of corners) {
+    for (let dy = 0; dy < sample; dy++) {
+      for (let dx = 0; dx < sample; dx++) {
+        const i = ((cy + dy) * width + (cx + dx)) * 4
+        br += data[i]; bg += data[i + 1]; bb += data[i + 2]; n++
+      }
+    }
+  }
+  br /= n; bg /= n; bb /= n
+  let minX = width, maxX = 0, minY = height, maxY = 0, found = false
+  // ステップサンプリングで高速化（精度は若干粗くても十分）
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 800))
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4
+      if (Math.abs(data[i] - br) + Math.abs(data[i + 1] - bg) + Math.abs(data[i + 2] - bb) > threshold) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+        found = true
+      }
+    }
+  }
+  if (!found) return null
+  minX = Math.max(0, minX - padding)
+  minY = Math.max(0, minY - padding)
+  maxX = Math.min(width - 1, maxX + padding)
+  maxY = Math.min(height - 1, maxY + padding)
+  // 検出結果が画像の半分未満ならノイズと判定して採用しない
+  const w = maxX - minX + 1, h = maxY - minY + 1
+  if (w * h < width * height * 0.1) return null
+  return { x: minX, y: minY, w, h }
+}
+
+// EXIF補正 + 縦向き強制 + 余白自動カット
 async function makeOrientedPreviewUrl(file: File): Promise<string> {
   if (typeof createImageBitmap === 'undefined') return URL.createObjectURL(file)
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    const c = document.createElement('canvas')
-    c.width = bitmap.width
-    c.height = bitmap.height
-    c.getContext('2d')!.drawImage(bitmap, 0, 0)
+    const isLandscape = bitmap.width > bitmap.height
+    // 1) 縦向き化
+    const c1 = document.createElement('canvas')
+    if (isLandscape) {
+      c1.width = bitmap.height
+      c1.height = bitmap.width
+      const ctx = c1.getContext('2d')!
+      ctx.translate(c1.width / 2, c1.height / 2)
+      ctx.rotate(Math.PI / 2)
+      ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2)
+    } else {
+      c1.width = bitmap.width
+      c1.height = bitmap.height
+      c1.getContext('2d')!.drawImage(bitmap, 0, 0)
+    }
+    // 2) 余白自動カット
+    const ctx1 = c1.getContext('2d')!
+    const imgData = ctx1.getImageData(0, 0, c1.width, c1.height)
+    const box = detectContentBox(imgData)
+    let outCanvas: HTMLCanvasElement = c1
+    if (box && (box.w < c1.width * 0.95 || box.h < c1.height * 0.95)) {
+      const c2 = document.createElement('canvas')
+      c2.width = box.w
+      c2.height = box.h
+      c2.getContext('2d')!.drawImage(c1, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h)
+      outCanvas = c2
+    }
     const blob = await new Promise<Blob>((resolve, reject) => {
-      c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92)
+      outCanvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92)
     })
     return URL.createObjectURL(blob)
   } catch {

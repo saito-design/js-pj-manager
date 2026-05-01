@@ -131,6 +131,19 @@ export default function SaitoManage() {
 
   useEffect(() => { load() }, [load])
 
+  const orientImage = async (f: File): Promise<File> => {
+    if (!f.type.startsWith('image/') || typeof createImageBitmap === 'undefined') return f
+    try {
+      const bitmap = await createImageBitmap(f, { imageOrientation: 'from-image' })
+      const c = document.createElement('canvas')
+      c.width = bitmap.width; c.height = bitmap.height
+      c.getContext('2d')!.drawImage(bitmap, 0, 0)
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92))
+      return new File([blob], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+    } catch { return f }
+  }
+
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
     const list = Array.from(files).filter(f =>
       f.type.startsWith('image/') || f.type === 'application/pdf'
@@ -141,8 +154,9 @@ export default function SaitoManage() {
     const errors: string[] = []
     for (const f of list) {
       try {
+        const oriented = await orientImage(f)
         const fd = new FormData()
-        fd.append('file', f)
+        fd.append('file', oriented)
         fd.append('apply_month', applyFilter || getCurrentApplyMonth())
         const res = await fetch('/api/expenses/submit', { method: 'POST', body: fd })
         if (!res.ok) {
