@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'qrcode'
+import Cropper, { Area } from 'react-easy-crop'
 import type { ReceiptSaito, Project, ExpenseItem, Department, TaxCategory } from '@/types'
+import { CATEGORIES } from '@/lib/category'
 
 interface ScheduleRecord {
   入力: string; PJコード: string; 得意先名: string
@@ -101,6 +103,14 @@ export default function SaitoManage() {
   const [newCategory, setNewCategory] = useState('')
   const [itemSaving, setItemSaving] = useState(false)
   const [itemError, setItemError] = useState('')
+
+  // 編集モーダルの画像トリミング
+  const [showCropper, setShowCropper] = useState(false)
+  const [cropImageSrc, setCropImageSrc] = useState<string>('')
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
+  const [savingFile, setSavingFile] = useState(false)
 
   // PCからのアップロード（state/refのみ。実装はload定義後）
   const [uploading, setUploading] = useState(false)
@@ -220,6 +230,63 @@ export default function SaitoManage() {
       .catch(() => setPrediction(null))
       .finally(() => setPredicting(false))
   }, [editing?.id, editing?.vendor_name, editing?.usage_date, projects, items])
+
+  // 画像URL（編集対象用）
+  const editImageUrl = useMemo(
+    () => editing?.source_file_id ? `/api/expenses/${editing.id}/file?ts=${Date.parse(editing.updated_at || '') || 0}` : '',
+    [editing?.id, editing?.source_file_id, editing?.updated_at]
+  )
+
+  const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
+    setCroppedAreaPixels(areaPixels)
+  }, [])
+
+  const startCrop = useCallback(() => {
+    if (!editImageUrl) return
+    setCropImageSrc(editImageUrl)
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+    setCroppedAreaPixels(null)
+    setShowCropper(true)
+  }, [editImageUrl])
+
+  const saveCroppedImage = async () => {
+    if (!editing || !croppedAreaPixels) return
+    setSavingFile(true)
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image()
+        i.crossOrigin = 'anonymous'
+        i.onload = () => resolve(i)
+        i.onerror = reject
+        i.src = cropImageSrc
+      })
+      const c = document.createElement('canvas')
+      c.width = croppedAreaPixels.width
+      c.height = croppedAreaPixels.height
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(
+        img,
+        croppedAreaPixels.x, croppedAreaPixels.y, croppedAreaPixels.width, croppedAreaPixels.height,
+        0, 0, croppedAreaPixels.width, croppedAreaPixels.height,
+      )
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92)
+      )
+      const fd = new FormData()
+      fd.append('file', new File([blob], 'cropped.jpg', { type: 'image/jpeg' }))
+      const res = await fetch(`/api/expenses/${editing.id}/file`, { method: 'PUT', body: fd })
+      if (!res.ok) throw new Error('差し替え失敗')
+      const updated = await res.json()
+      setExpenses(prev => prev.map(e => e.id === updated.id ? updated : e))
+      setEditing(updated)
+      setShowCropper(false)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'トリミング失敗')
+    } finally {
+      setSavingFile(false)
+    }
+  }
 
   const applyPrediction = () => {
     if (!editing || !prediction) return
@@ -575,8 +642,69 @@ export default function SaitoManage() {
       {/* 編集モーダル */}
       {editing && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-lg w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-5 space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="font-bold text-gray-800">経費を編集</h3>
+
+            {/* サムネイル＋トリミングUI */}
+            {editing.source_file_id && (
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                {!showCropper ? (
+                  <div className="flex gap-3 items-start">
+                    <a href={editImageUrl} target="_blank" rel="noopener noreferrer" className="block flex-shrink-0">
+                      <img
+                        src={editImageUrl}
+                        alt="receipt"
+                        className="w-40 h-40 object-contain bg-white border border-gray-200 rounded"
+                      />
+                    </a>
+                    <div className="text-xs text-gray-500 space-y-1 flex-1">
+                      <div>ファイル: <code className="bg-white px-1">{editing.source_file}</code></div>
+                      <button
+                        type="button"
+                        onClick={startCrop}
+                        className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700"
+                      >✂ 余白を再トリミング</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative bg-black rounded" style={{ height: '50vh', minHeight: '300px' }}>
+                      <Cropper
+                        image={cropImageSrc}
+                        crop={crop}
+                        zoom={zoom}
+                        aspect={undefined}
+                        onCropChange={setCrop}
+                        onZoomChange={setZoom}
+                        onCropComplete={onCropComplete}
+                        restrictPosition={false}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-12">拡大</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={0.05}
+                        value={zoom}
+                        onChange={e => setZoom(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                      <span className="text-xs font-mono w-10 text-right">{zoom.toFixed(1)}x</span>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => setShowCropper(false)} className="px-3 py-1 text-xs text-gray-600 hover:text-gray-900">キャンセル</button>
+                      <button
+                        onClick={saveCroppedImage}
+                        disabled={savingFile || !croppedAreaPixels}
+                        className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-40"
+                      >{savingFile ? '保存中...' : '✓ Driveに保存'}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 予測パネル */}
             {predicting && (
@@ -657,8 +785,21 @@ export default function SaitoManage() {
                   className="w-full px-2 py-1 border rounded"
                 />
               </label>
+              <label className="col-span-2 space-y-1">
+                <span className="text-gray-600 text-xs">分類（ファイル名用）</span>
+                <input
+                  list="category-list"
+                  value={editing.category || ''}
+                  onChange={e => setEditing({ ...editing, category: e.target.value || null })}
+                  placeholder="タクシー代 / 宿泊代 / 新幹線代 など"
+                  className="w-full px-2 py-1 border rounded"
+                />
+                <datalist id="category-list">
+                  {CATEGORIES.map(c => <option key={c} value={c} />)}
+                </datalist>
+              </label>
               <label className="space-y-1">
-                <span className="text-gray-600 text-xs">経費項目</span>
+                <span className="text-gray-600 text-xs">経費項目（楽々精算）</span>
                 <select value={editing.expense_item_code || ''} onChange={e => {
                   const it = itemsAugmented.find(i => i.code === e.target.value)
                   setEditing({ ...editing, expense_item_code: e.target.value || null, expense_item: it?.name || null })
@@ -748,6 +889,7 @@ export default function SaitoManage() {
                   pj_no: editing.pj_no,
                   pj_name: editing.pj_name,
                   client_name: editing.client_name,
+                  category: editing.category,
                   expense_item: editing.expense_item,
                   expense_item_code: editing.expense_item_code,
                   vendor_name: editing.vendor_name,

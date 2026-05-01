@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/auth';
 import { extractReceipt } from '@/lib/claude';
 import { buildSaitoFilename, getCurrentApplyMonth } from '@/lib/filename';
 import { computePrediction, loadScheduleByDate } from '@/lib/prediction';
+import { guessCategory } from '@/lib/category';
 import type { ReceiptSaito } from '@/types';
 import { randomUUID } from 'crypto';
 
@@ -134,8 +135,19 @@ export async function POST(req: NextRequest) {
       console.error('predict at submit failed (non-fatal):', e);
     }
 
+    // 用途分類: vendor_nameから自動推定（履歴での同vendor分類があればそれを優先）
+    let category: string | null = null;
+    if (vendor_name) {
+      const histWithCat = expenses.find(e => {
+        const ev = (e.vendor_name || '').toLowerCase();
+        const v = vendor_name.toLowerCase();
+        return ev && (ev.includes(v) || v.includes(ev)) && e.category;
+      });
+      category = histWithCat?.category || guessCategory(vendor_name);
+    }
+
     const newFilename = buildSaitoFilename(
-      { apply_month, pj_no, client_name, expense_item, vendor_name, usage_date, extra_tax_labels: [] },
+      { apply_month, pj_no, client_name, category, vendor_name, usage_date, extra_tax_labels: [] },
       origName,
     );
 
@@ -156,6 +168,7 @@ export async function POST(req: NextRequest) {
       vendor_name,
       apply_month,
       usage_date,
+      category,
       total_amount,
       tax_amount,
       tax_rate,

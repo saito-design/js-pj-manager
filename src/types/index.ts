@@ -27,8 +27,9 @@ export interface ReceiptSaito {
   pj_no: string | null
   pj_name: string | null            // PJ件名（スケジュール由来）
   client_name: string | null        // 客先名/企業名（スケジュール得意先名 由来）
-  expense_item: string | null      // 経費項目名
-  expense_item_code: string | null // 経費項目コード
+  expense_item: string | null      // 経費項目名（楽々精算）
+  expense_item_code: string | null // 経費項目コード（楽々精算）
+  category: string | null          // 用途分類（タクシー代/宿泊代/新幹線代等。ファイル名にも使用）
   vendor_name: string | null       // 取引先名
   apply_month: string | null       // 'YYYY-MM'
   usage_date: string | null        // 'YYYY-MM-DD'
