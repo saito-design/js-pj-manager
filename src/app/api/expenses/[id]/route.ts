@@ -1,8 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { loadJsonByName, getDataFolderId, saveJsonFile, renameFile, deleteFile } from '@/lib/drive';
+import { Readable } from 'stream';
+import { google } from 'googleapis';
+import { JWT } from 'google-auth-library';
+import { loadJsonByName, getDataFolderId, saveJsonFile, renameFile, deleteFile, downloadFile } from '@/lib/drive';
 import { requireAuth } from '@/lib/auth';
 import { buildSaitoFilename } from '@/lib/filename';
+import { imageBufferToPdfBuffer, pdfizeFilename } from '@/lib/imageToPdf';
 import type { ReceiptSaito } from '@/types';
+
+function clean(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  let c = v.trim();
+  if (c.startsWith('"') && c.endsWith('"')) c = c.slice(1, -1);
+  return c.replace(/\\n/g, '\n');
+}
+
+function getDriveWrite() {
+  const auth = new JWT({
+    email: clean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL),
+    key: clean(process.env.GOOGLE_PRIVATE_KEY),
+    scopes: ['https://www.googleapis.com/auth/drive'],
+  });
+  return google.drive({ version: 'v3', auth });
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +65,37 @@ export async function PUT(
     expenses[idx].updated_at = new Date().toISOString();
 
     const e = expenses[idx];
+
+    // 確定（pending→confirmed）に変わり、まだ画像形式なら PDF に変換
+    const justConfirmed = before.status !== 'confirmed' && e.status === 'confirmed';
+    const isImage = /\.(jpe?g|png|webp)$/i.test(e.source_file || '');
+    if (justConfirmed && isImage && e.source_file_id && e.source_file) {
+      try {
+        const buf = await downloadFile(e.source_file_id);
+        const ext = (e.source_file.match(/\.([^.]+)$/) || ['', 'jpg'])[1].toLowerCase();
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        const pdfBuf = await imageBufferToPdfBuffer(buf, mime);
+        const pdfName = pdfizeFilename(e.source_file);
+        const drive = getDriveWrite();
+        const uploadsId = process.env.UPLOADS_FOLDER_SAITO!;
+        const created = await drive.files.create({
+          requestBody: { name: pdfName, parents: [uploadsId] },
+          media: { mimeType: 'application/pdf', body: Readable.from(pdfBuf) },
+          fields: 'id', supportsAllDrives: true,
+        });
+        // 旧JPGをゴミ箱
+        await drive.files.update({
+          fileId: e.source_file_id,
+          requestBody: { trashed: true },
+          supportsAllDrives: true,
+        });
+        e.source_file = pdfName;
+        e.source_file_id = created.data.id || null;
+      } catch (err) {
+        console.error('confirm時のPDF変換失敗 (non-fatal):', err);
+      }
+    }
+
     const nameKeys: (keyof ReceiptSaito)[] = ['apply_month', 'pj_no', 'client_name', 'category', 'vendor_name', 'usage_date', 'extra_tax_labels'];
     const changed = nameKeys.some(k => JSON.stringify(before[k]) !== JSON.stringify(e[k]));
     if (changed && e.source_file_id && e.source_file) {

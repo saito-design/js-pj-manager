@@ -93,15 +93,10 @@ export async function PUT(
     const target = expenses[idx];
 
     const drive = getDriveWrite();
-    const rawBuf = Buffer.from(await file.arrayBuffer());
-    const rawMime = file.type || 'image/jpeg';
-    // 画像はPDFに変換（楽々精算はPDF受付のみ）
-    const isImage = rawMime.startsWith('image/');
-    const buf = isImage ? await imageBufferToPdfBuffer(rawBuf, rawMime) : rawBuf;
-    const mime = isImage ? 'application/pdf' : rawMime;
-    // ファイル名: 既存の source_file の拡張子を .pdf に変換
-    const baseName = target.source_file || file.name || `replace_${Date.now()}.jpg`;
-    const filename = isImage ? pdfizeFilename(baseName) : baseName;
+    const buf = Buffer.from(await file.arrayBuffer());
+    const mime = file.type || 'image/jpeg';
+    // クロップ差し替えは元形式（JPG/PDF）のまま保存。PDF変換は確定時に実施
+    const filename = target.source_file || file.name || `replace_${Date.now()}.jpg`;
 
     const stream = Readable.from(buf);
     const newFile = await drive.files.create({
