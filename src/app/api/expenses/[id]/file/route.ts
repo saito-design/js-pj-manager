@@ -4,6 +4,8 @@ import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 import { loadJsonByName, saveJsonFile, getDataFolderId, downloadFile } from '@/lib/drive';
 import { requireAuth } from '@/lib/auth';
+import { imageBufferToPdfBuffer, pdfizeFilename } from '@/lib/imageToPdf';
+import { buildSaitoFilename } from '@/lib/filename';
 import type { ReceiptSaito } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -91,12 +93,20 @@ export async function PUT(
     const target = expenses[idx];
 
     const drive = getDriveWrite();
-    const buf = Buffer.from(await file.arrayBuffer());
+    const rawBuf = Buffer.from(await file.arrayBuffer());
+    const rawMime = file.type || 'image/jpeg';
+    // 画像はPDFに変換（楽々精算はPDF受付のみ）
+    const isImage = rawMime.startsWith('image/');
+    const buf = isImage ? await imageBufferToPdfBuffer(rawBuf, rawMime) : rawBuf;
+    const mime = isImage ? 'application/pdf' : rawMime;
+    // ファイル名: 既存の source_file の拡張子を .pdf に変換
+    const baseName = target.source_file || file.name || `replace_${Date.now()}.jpg`;
+    const filename = isImage ? pdfizeFilename(baseName) : baseName;
+
     const stream = Readable.from(buf);
-    const filename = target.source_file || file.name || `replace_${Date.now()}.jpg`;
     const newFile = await drive.files.create({
       requestBody: { name: filename, parents: [uploadsId] },
-      media: { mimeType: file.type || 'image/jpeg', body: stream },
+      media: { mimeType: mime, body: stream },
       fields: 'id',
       supportsAllDrives: true,
     });

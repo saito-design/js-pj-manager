@@ -261,30 +261,24 @@ export default function SaitoManage() {
       .then(data => {
         if (!data || !data.source || data.source === 'none') { setPrediction(null); return }
         setPrediction(data)
-        // schedule系（日付駆動）は常に上書き、history系（vendor駆動）は空欄のみ
-        const fromSchedule = data.source === 'schedule' || data.source === 'both'
+        // 全フィールド「空欄のみ補完」。既存値は上書きしない（手動修正/保存値を保護）
+        // 既存値を変更したい場合は予測パネルの「適用」ボタンを使う
         setEditing(prev => {
           if (!prev || prev.id !== editingId) return prev
           const next = { ...prev }
-          if (data.pj_no && (fromSchedule || !next.pj_no)) {
+          if (!next.pj_no && data.pj_no) {
             const p = projectsAugmented.find(pp => pp.pj_no === data.pj_no)
             next.pj_no = data.pj_no
             next.pj_name = p?.case_name || data.pj_name || null
           }
-          if (data.client_name && (fromSchedule || !next.client_name)) {
-            next.client_name = data.client_name
-          }
+          if (!next.client_name && data.client_name) next.client_name = data.client_name
           if (!next.expense_item_code && data.expense_item_code) {
             const it = itemsAugmented.find(i => i.code === data.expense_item_code)
             next.expense_item_code = data.expense_item_code
             next.expense_item = it?.name || null
           }
-          if (!next.department_code && data.department_code) {
-            next.department_code = data.department_code
-          }
-          if (!next.category && data.category) {
-            next.category = data.category
-          }
+          if (!next.department_code && data.department_code) next.department_code = data.department_code
+          if (!next.category && data.category) next.category = data.category
           // notesは伝票ごとに固有なので自動反映しない
           return next
         })

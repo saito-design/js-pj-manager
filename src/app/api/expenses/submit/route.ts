@@ -8,6 +8,7 @@ import { extractReceipt } from '@/lib/claude';
 import { buildSaitoFilename, getCurrentApplyMonth } from '@/lib/filename';
 import { computePrediction, loadScheduleByDate } from '@/lib/prediction';
 import { guessCategory } from '@/lib/category';
+import { imageBufferToPdfBuffer, pdfizeFilename } from '@/lib/imageToPdf';
 import type { ReceiptSaito } from '@/types';
 import { randomUUID } from 'crypto';
 
@@ -63,15 +64,22 @@ export async function POST(req: NextRequest) {
     const formExpenseItemCode = (form.get('expense_item_code') as string) || null;
     const formDepartmentCode = (form.get('department_code') as string) || null;
 
-    const buf = Buffer.from(await file.arrayBuffer());
-    const mime = file.type || 'application/octet-stream';
-    const origName = file.name || `upload_${Date.now()}`;
+    const rawBuf = Buffer.from(await file.arrayBuffer());
+    const rawMime = file.type || 'application/octet-stream';
+    const rawName = file.name || `upload_${Date.now()}`;
+
+    // 楽々精算はPDFのみ受付なので画像はPDFに変換
+    const isImage = rawMime.startsWith('image/');
+    const buf = isImage ? await imageBufferToPdfBuffer(rawBuf, rawMime) : rawBuf;
+    const mime = isImage ? 'application/pdf' : rawMime;
+    const origName = isImage ? pdfizeFilename(rawName) : rawName;
 
     const tempId = await uploadToDrive(buf, origName, mime, uploadsId);
 
+    // OCRは元画像（PDFでも可）に対して実行
     let extracted: Awaited<ReturnType<typeof extractReceipt>> | null = null;
     try {
-      extracted = await extractReceipt(buf, mime);
+      extracted = await extractReceipt(rawBuf, rawMime);
     } catch (e) {
       console.error('Claude extract failed:', e);
     }
