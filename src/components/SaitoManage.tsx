@@ -63,6 +63,7 @@ export default function SaitoManage() {
   const [applyFilter, setApplyFilter] = useState(getCurrentApplyMonth())
   const [pjFilter, setPjFilter] = useState('')
   const [editing, setEditing] = useState<ReceiptSaito | null>(null)
+  const [scheduleKey, setScheduleKey] = useState<string>('')
   const [prediction, setPrediction] = useState<{
     pj_no: string | null
     pj_name: string | null
@@ -693,7 +694,7 @@ export default function SaitoManage() {
                       </span>
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <button onClick={() => setEditing(e)} className="text-blue-600 hover:underline mr-2">編集</button>
+                      <button onClick={() => { setEditing(e); setScheduleKey(e.usage_date && e.pj_no ? `${e.usage_date}_${e.pj_no}_${e.pj_name || ''}` : '') }} className="text-blue-600 hover:underline mr-2">編集</button>
                       <button onClick={() => deleteExpense(e.id)} className="text-red-500 hover:underline">削除</button>
                     </td>
                   </tr>
@@ -847,11 +848,12 @@ export default function SaitoManage() {
               <label className="col-span-2 space-y-1">
                 <span className="text-gray-600 text-xs">PJ（{applyFilter}のスケジュール／移動・前日入り除く）</span>
                 <select
-                  value={editing.pj_no && editing.usage_date ? `${editing.usage_date}_${editing.pj_no}_${editing.pj_name || ''}` : ''}
+                  value={scheduleKey}
                   onChange={e => {
                     const v = e.target.value
                     if (!v) {
                       setEditing({ ...editing, pj_no: null, pj_name: null })
+                      setScheduleKey('')
                       return
                     }
                     const sel = scheduleEntriesForEdit.find(s => s.key === v)
@@ -863,6 +865,7 @@ export default function SaitoManage() {
                         client_name: sel.client_name || editing.client_name,
                         usage_date: sel.date || editing.usage_date,
                       })
+                      setScheduleKey(v)
                     }
                   }}
                   className="w-full px-2 py-1 border rounded font-mono text-xs"
@@ -1047,7 +1050,7 @@ export default function SaitoManage() {
               )
             })()}
             <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">キャンセル</button>
+              <button onClick={() => { setEditing(null); setScheduleKey('') }} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">キャンセル</button>
               {(() => {
                 // トリミング画面が開いていて、かつ範囲が画像全体でない場合のみ画像差し替え
                 const shouldApplyCrop = (): boolean => {
@@ -1091,8 +1094,8 @@ export default function SaitoManage() {
                           const after = expensesSorted.slice(idx + 1).find(x => x.status === 'pending')
                           const before = expensesSorted.slice(0, idx).find(x => x.status === 'pending')
                           const next = after || before || null
-                          if (next) setEditing(next)
-                          else setEditing(null)
+                          if (next) { setEditing(next); setScheduleKey(next.usage_date && next.pj_no ? `${next.usage_date}_${next.pj_no}_${next.pj_name || ''}` : '') }
+                          else { setEditing(null); setScheduleKey('') }
                         } finally {
                           setSavingExpense(false)
                         }
@@ -1107,6 +1110,7 @@ export default function SaitoManage() {
                           if (shouldApplyCrop()) await saveCroppedImage()
                           await updateExpense(editing.id, buildPatch(editing))
                           setEditing(null)
+                          setScheduleKey('')
                         } finally {
                           setSavingExpense(false)
                         }
