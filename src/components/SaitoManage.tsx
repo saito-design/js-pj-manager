@@ -64,6 +64,7 @@ export default function SaitoManage() {
   const [pjFilter, setPjFilter] = useState('')
   const [editing, setEditing] = useState<ReceiptSaito | null>(null)
   const [scheduleKey, setScheduleKey] = useState<string>('')
+  const [driveUploadsUrl, setDriveUploadsUrl] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<{
     pj_no: string | null
     pj_name: string | null
@@ -153,6 +154,11 @@ export default function SaitoManage() {
   useEffect(() => {
     if (schedule === null) loadSchedule()
   }, [schedule, loadSchedule])
+
+  // DriveフォルダURLを初回マウント時に取得
+  useEffect(() => {
+    fetch('/api/drive-links').then(r => r.json()).then(d => setDriveUploadsUrl(d.uploads_url || null)).catch(() => {})
+  }, [])
 
   // 編集モーダルのPJ dropdown用: 申請年月スケジュールの日付別エントリ
   // - 件名が「移動・前日入り」のものは除外
@@ -651,8 +657,14 @@ export default function SaitoManage() {
           <span className="text-gray-600">申請年月</span>
           <MonthStepper value={applyFilter} onChange={setApplyFilter} />
         </label>
-        <div className="ml-auto text-xs text-gray-500">
-          合計 ¥{totalAmount.toLocaleString()} / {expenses.length}件
+        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
+          <span>合計 ¥{totalAmount.toLocaleString()} / {expenses.length}件</span>
+          {driveUploadsUrl && (
+            <a href={driveUploadsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-500 hover:text-blue-700">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 87.3 78" fill="currentColor"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.5C.4 49.9 0 51.45 0 53h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.65z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="M73.4 26.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+              PDFフォルダ
+            </a>
+          )}
         </div>
       </section>
 
